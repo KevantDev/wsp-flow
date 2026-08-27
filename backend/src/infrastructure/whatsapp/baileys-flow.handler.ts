@@ -41,20 +41,76 @@ export class BaileysFlowHandler {
     chatSessionId?: string,
   ): Promise<FlowResult | null> {
     const rawText = messageText.trim();
-    const cleanText = rawText.toLowerCase();
+    const cleanText = rawText.toLowerCase().replace(/[.,!¡?¿]/g, '').trim();
 
-    this.logger.log(`🤖 Mensaje entrante de [${customerPhone}]: "${rawText}"`);
+    this.logger.log(`🤖 Mensaje consolidado de [${customerPhone}]: "${rawText}"`);
 
-    // 1. Si el cliente solicita explícitamente el catálogo o archivo PDF
+    // =========================================================================
+    // 1. FAST-PATH 0 TOKENS: Cortesías, Agradecimientos y Despedidas
+    // =========================================================================
+    const courtesyPhrases = [
+      'gracias',
+      'muchas gracias',
+      'mil gracias',
+      'ok',
+      'ok gracias',
+      'dale',
+      'vale',
+      'listo',
+      'perfecto',
+      'genial',
+      'excelente',
+      'bueno',
+      '👍',
+      'chau',
+      'adios',
+      'hasta luego',
+    ];
+
+    if (courtesyPhrases.includes(cleanText)) {
+      this.logger.log(`⚡ Fast-Path ejecutado (0 Tokens) para cortesía: "${cleanText}"`);
+      return {
+        replyText: `¡Con mucho gusto, ${customerName}! 😊 Si necesitas consultar algo más o deseas confirmar tu pedido, aquí estoy para ayudarte. ¡Que tengas un excelente día! ✨`,
+        actionTaken: 'FAST_PATH_COURTESY',
+      };
+    }
+
+    // =========================================================================
+    // 2. FAST-PATH 0 TOKENS: Solicitud Explícita de Asesor Humano / Pausa del Bot
+    // =========================================================================
+    if (
+      cleanText === 'asesor' ||
+      cleanText === 'humano' ||
+      cleanText === 'operador' ||
+      cleanText.includes('hablar con una persona') ||
+      cleanText.includes('hablar con asesor') ||
+      cleanText.includes('atencion humana')
+    ) {
+      await this.chatRepo.toggleBot(customerPhone, false);
+      return {
+        replyText:
+          '👨‍💼 *Atención con Asesor Humano Activada*\n\nHe pausado mis respuestas automáticas para este chat. Uno de nuestros asesores de ventas revisará tu conversación y te responderá a la brevedad.\n\n_Para reactivarme en cualquier momento, escribe *bot*._',
+        actionTaken: 'PAUSED_BOT',
+      };
+    }
+
+    // Reactivación del Bot
+    if (cleanText === 'bot' || cleanText === 'activar bot' || cleanText === 'menu') {
+      await this.chatRepo.toggleBot(customerPhone, true);
+    }
+
+    // =========================================================================
+    // 3. FAST-PATH 0 TOKENS: Solicitud Explícita de Catálogo en PDF
+    // =========================================================================
     if (
       cleanText === 'catalogo' ||
       cleanText === 'catálogo' ||
-      cleanText.includes('catalogo pdf') ||
-      cleanText.includes('catálogo pdf') ||
-      cleanText.includes('ver catalogo') ||
-      cleanText.includes('ver catálogo') ||
-      cleanText.includes('enviar catalogo') ||
-      cleanText.includes('enviar catálogo')
+      cleanText === 'catalogo pdf' ||
+      cleanText === 'catálogo pdf' ||
+      cleanText === 'ver catalogo' ||
+      cleanText === 'ver catálogo' ||
+      cleanText === 'enviar catalogo' ||
+      cleanText === 'enviar catálogo'
     ) {
       try {
         const { filePath } = await this.catalogPdfService.generateCatalogPdf();
@@ -69,10 +125,17 @@ export class BaileysFlowHandler {
       }
     }
 
-    // 2. Si OpenAI con GPT-5.6-luna está configurado y activo, usar IA con Function Calling
+    // =========================================================================
+    // 4. MOTOR PRINCIPAL DE IA: OpenAI GPT-5.6-luna con Function Calling & Memoria
+    // =========================================================================
     if (this.aiService.isAvailable()) {
       this.logger.log(`🧠 Procesando con OpenAI GPT-5.6-luna y Function Calling...`);
-      const aiResult = await this.aiService.processWhatsAppMessage(customerPhone, customerName, rawText, chatSessionId);
+      const aiResult = await this.aiService.processWhatsAppMessage(
+        customerPhone,
+        customerName,
+        rawText,
+        chatSessionId,
+      );
       return {
         replyText: aiResult.replyText,
         mediaUrl: aiResult.mediaUrl,
@@ -82,35 +145,12 @@ export class BaileysFlowHandler {
       };
     }
 
-    // 3. MODO DETERMINÍSTICO DE RESPALDO (Sin API Key o en modo offline)
+    // =========================================================================
+    // 5. MODO DETERMINÍSTICO DE RESPALDO OFFLINE (Sin OpenAI API Key)
+    // =========================================================================
 
-    // Comando: Solicitar Asesor / Pausar Bot
+    // Saludo inicial
     if (
-      cleanText.includes('asesor') ||
-      cleanText.includes('humano') ||
-      cleanText.includes('operador') ||
-      cleanText.includes('ayuda')
-    ) {
-      await this.chatRepo.toggleBot(customerPhone, false);
-      return {
-        replyText:
-          '👨‍💼 *Atención Personalizada Activada*\n\nHe pausado las respuestas automáticas para este chat. Uno de nuestros asesores de ventas te responderá a la brevedad.\n\n_Para reactivar el bot en cualquier momento, escribe *bot*._',
-        actionTaken: 'PAUSED_BOT',
-      };
-    }
-
-    // Comando: Reactivar Bot
-    if (cleanText === 'bot' || cleanText === 'activar bot' || cleanText === 'menu') {
-      await this.chatRepo.toggleBot(customerPhone, true);
-    }
-
-    // Comando: Ver Catálogo de Productos / Saludo
-    if (
-      cleanText.includes('catalogo') ||
-      cleanText.includes('catálogo') ||
-      cleanText.includes('menu') ||
-      cleanText.includes('menú') ||
-      cleanText.includes('productos') ||
       cleanText === 'hola' ||
       cleanText === 'buenas' ||
       cleanText === 'buenos dias' ||
@@ -120,7 +160,7 @@ export class BaileysFlowHandler {
       try {
         const { filePath } = await this.catalogPdfService.generateCatalogPdf();
         return {
-          replyText: `📄 *¡Hola! Aquí tienes nuestro Catálogo Oficial en PDF.* 🛍️\n\nRevisa todos nuestros productos disponibles. Para ordenar responde con *pedir #01* o escribe *asesor*.`,
+          replyText: `👋 ¡Hola ${customerName}! Bienvenido a nuestra tienda. Te adjunto nuestro Catálogo Oficial en PDF. Revisa los productos y dime qué te gustaría ordenar.`,
           documentPath: filePath,
           documentFileName: 'Catalogo_WSP_Flow.pdf',
           actionTaken: 'SENT_CATALOG_PDF',
@@ -128,7 +168,7 @@ export class BaileysFlowHandler {
       } catch {
         const products = await this.productRepo.findAll({ onlyAvailable: true });
         return {
-          replyText: `👋 ¡Hola! Bienvenido a nuestra tienda. Tenemos ${products.length} productos disponibles. Escribe *catalogo* para recibir el PDF o escribe *asesor* para ser atendido.`,
+          replyText: `👋 ¡Hola ${customerName}! Bienvenido a nuestra tienda. Tenemos ${products.length} productos disponibles. Escribe *catalogo* para recibir el PDF o escribe *asesor* para ser atendido.`,
         };
       }
     }
@@ -145,126 +185,67 @@ export class BaileysFlowHandler {
       let selectedProduct = null;
       let quantity = 1;
 
-      const qtyMatch = rawText.match(/(\d+)\s*(unidades|unidad|u|x)?/i);
-      if (qtyMatch && parseInt(qtyMatch[1], 10) > 0 && parseInt(qtyMatch[1], 10) < 50) {
-        quantity = parseInt(qtyMatch[1], 10);
-      }
-
-      const indexMatch = rawText.match(/#(\d+)/);
-      if (indexMatch) {
-        const itemIdx = parseInt(indexMatch[1], 10) - 1;
-        if (itemIdx >= 0 && itemIdx < products.length) {
-          selectedProduct = products[itemIdx];
+      for (const prod of products) {
+        if (
+          cleanText.includes(prod.sku.toLowerCase()) ||
+          cleanText.includes(prod.name.toLowerCase()) ||
+          cleanText.includes(prod.slug.toLowerCase())
+        ) {
+          selectedProduct = prod;
+          break;
         }
       }
 
-      if (!selectedProduct) {
-        for (const p of products) {
-          if (cleanText.includes(p.sku.toLowerCase()) || cleanText.includes(p.name.toLowerCase())) {
-            selectedProduct = p;
-            break;
-          }
+      if (selectedProduct) {
+        const qtyMatch = cleanText.match(/\b(\d+)\b/);
+        if (qtyMatch && parseInt(qtyMatch[1], 10) > 0 && parseInt(qtyMatch[1], 10) < 100) {
+          quantity = parseInt(qtyMatch[1], 10);
         }
-      }
 
-      if (!selectedProduct) {
-        return {
-          replyText:
-            '⚠️ No pude identificar el producto que deseas ordenar.\n\nPor favor consulta el catálogo escribiendo *catalogo* o indica el número (ej: *pedir #01*).',
-        };
-      }
+        if (selectedProduct.stock < quantity) {
+          return {
+            replyText: `⚠️ *Stock insuficiente:* Solo nos quedan ${selectedProduct.stock} unidades de *${selectedProduct.name}*. ¿Deseas ordenar esa cantidad?`,
+          };
+        }
 
-      if (selectedProduct.stock < quantity) {
-        return {
-          replyText: `⚠️ Disculpa, solo tenemos *${selectedProduct.stock}* unidades disponibles de *${selectedProduct.name}*. Por favor indica una cantidad menor.`,
-        };
-      }
+        const subtotal = selectedProduct.price * quantity;
+        const total = subtotal;
 
-      const subtotal = selectedProduct.price * quantity;
-      const deliveryFee = 0;
-      const total = subtotal + deliveryFee;
-
-      const newOrder = await this.orderRepo.create(
-        {
-          customerName: customerName || 'Cliente WhatsApp',
-          customerPhone,
-          status: OrderStatus.PENDING,
-          source: OrderSource.WHATSAPP_BOT,
-          subtotal,
-          deliveryFee,
-          total,
-          notes: `Generado automáticamente por Bot Baileys. Producto: ${selectedProduct.name} (x${quantity})`,
-        },
-        [
+        const newOrder = await this.orderRepo.create(
           {
-            productId: selectedProduct.id,
-            productName: selectedProduct.name,
-            unitPrice: selectedProduct.price,
-            quantity,
+            customerName,
+            customerPhone,
+            status: OrderStatus.PENDING,
+            source: OrderSource.WHATSAPP_BOT,
             subtotal,
+            deliveryFee: 0,
+            total,
+            notes: `Orden creada automáticamente vía WhatsApp`,
           },
-        ],
-      );
+          [
+            {
+              productId: selectedProduct.id,
+              productName: selectedProduct.name,
+              quantity,
+              unitPrice: selectedProduct.price,
+              subtotal,
+            },
+          ],
+        );
 
-      // Descontar inventario
-      await this.productRepo.decrementStock(selectedProduct.id, quantity);
+        await this.productRepo.decrementStock(selectedProduct.id, quantity);
+        this.wsGateway.emitNewOrder(newOrder);
 
-      // Notificar en tiempo real al Dashboard Bento vía WebSocket
-      this.wsGateway.emitNewOrder(newOrder);
-
-      // Verificar si quedó con bajo stock
-      if (selectedProduct.stock - quantity <= selectedProduct.minStockAlert) {
-        this.wsGateway.emitStockAlert({
-          id: selectedProduct.id,
-          name: selectedProduct.name,
-          stock: selectedProduct.stock - quantity,
-          minStockAlert: selectedProduct.minStockAlert,
-        });
-      }
-
-      let confirmationMsg = `🎉 *¡PEDIDO REGISTRADO CON ÉXITO!* 🎉\n`;
-      confirmationMsg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      confirmationMsg += `📄 *Número de Pedido:* \`${newOrder.orderNumber}\`\n`;
-      confirmationMsg += `🛍️ *Producto:* ${selectedProduct.name}\n`;
-      confirmationMsg += `🔢 *Cantidad:* ${quantity} unidad(es)\n`;
-      confirmationMsg += `💵 *Total a Pagar:* $${total.toFixed(2)} USD\n`;
-      confirmationMsg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      confirmationMsg += `📍 *Siguiente paso:* Por favor respóndenos con tu *Nombre Completo* y *Dirección de entrega / Ciudad* para coordinar el despacho.\n\n`;
-      confirmationMsg += `_Un asesor de nuestro equipo ya está revisando tu orden en el panel._`;
-
-      return {
-        replyText: confirmationMsg,
-        actionTaken: 'CREATED_ORDER',
-      };
-    }
-
-    // Palabras Clave Personalizadas en Base de Datos
-    const keywords = await this.prisma.botKeyword.findMany({ where: { isActive: true } });
-    for (const kw of keywords) {
-      const match =
-        kw.matchType === 'EXACT'
-          ? cleanText === kw.keyword.toLowerCase()
-          : cleanText.includes(kw.keyword.toLowerCase());
-
-      if (match) {
-        if (kw.action === 'SHOW_CATALOG') {
-          return this.handleIncomingMessage(customerPhone, customerName, 'catalogo');
-        }
-        if (kw.action === 'PAUSE_BOT') {
-          await this.chatRepo.toggleBot(customerPhone, false);
-        }
         return {
-          replyText: kw.response,
-          mediaUrl: kw.mediaUrl || undefined,
-          actionTaken: `KEYWORD_${kw.keyword}`,
+          replyText: `🎉 *¡Pedido Registrado con Éxito!*\n\n• *Orden:* \`#${newOrder.orderNumber}\`\n• *Producto:* ${selectedProduct.name} x${quantity}\n• *Total a Pagar:* $${total.toFixed(2)} USD\n• *Estado:* Pendiente de Confirmación\n\nUno de nuestros asesores se comunicará para coordinar el pago y envío. ¡Muchas gracias!`,
+          actionTaken: 'CREATED_ORDER_DETERMINISTIC',
         };
       }
     }
 
-    // Respuesta por Defecto
+    // Respuesta genérica de respaldo
     return {
-      replyText: `👋 ¡Hola! ¿En qué puedo ayudarte hoy?\n\n📌 *Opciones disponibles:*\n• Escribe *catalogo* para recibir nuestro Catálogo en PDF con fotos y precios.\n• Escribe *pedir #01* para ordenar.\n• Escribe *asesor* para hablar con un representante de nuestro equipo.`,
-      actionTaken: 'DEFAULT_FALLBACK',
+      replyText: `👋 ¡Hola ${customerName}! Gracias por tu mensaje. Escribe *catalogo* para recibir nuestra lista en PDF, o escribe *asesor* para hablar con nuestro equipo.`,
     };
   }
 }

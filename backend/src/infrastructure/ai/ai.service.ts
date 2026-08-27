@@ -87,7 +87,12 @@ export class AiService {
         hasVideo: !!p.videoUrl,
       }));
 
-      // 4. Construir el System Prompt maestro enriquecido con datos reales de la empresa
+      // 4. Construir el System Prompt maestro enriquecido con datos reales de la empresa y directrices de seguridad
+      const isLongConversation = recentHistory.length >= 8;
+      const salesUrgencyPrompt = isLongConversation
+        ? `\n\n[ESTRATEGIA DE CIERRE DE VENTA]: Este cliente ya lleva varias consultas en el chat. Tras responder a su duda, haz un llamado a la acción directo y amable para concretar su pedido hoy mismo o pregúntale si prefiere que un asesor lo contacte para resolver detalles finales.`
+        : '';
+
       const systemPrompt = `${config.systemPrompt}
 
 DATOS OFICIALES DE LA EMPRESA:
@@ -98,16 +103,16 @@ DATOS OFICIALES DE LA EMPRESA:
 - Horarios de Atención: ${config.workingHours}
 - Ubicación / Dirección: ${config.address}
 
-CATÁLOGO RESUMIDO DISPONIBLE (${productsSummary.length} productos):
+CATÁLOGO DISPONIBLE EN INVENTARIO (${productsSummary.length} productos):
 ${JSON.stringify(productsSummary, null, 1)}
 
-DIRECTRICES CLAVE:
-1. Responde siempre con naturalidad, empatía y fluidez humana. No suenes robótico ni des respuestas enlatadas.
-2. Si el cliente pregunta qué vendes o detalles de un producto, consulta con 'search_products' o 'check_stock'.
-3. Si el cliente pide fotos, imágenes o video demostrativo de un producto, utiliza la herramienta 'send_product_media' indicando el SKU y tipo ('image' o 'video').
-4. Cuando el cliente decida comprar, confirma los productos, pide su nombre y dirección de envío y ejecuta 'create_order'.
-5. Si el cliente solicita explícitamente ser atendido por una persona o tiene un problema que requiere intervención, usa 'transfer_to_human'.
-6. Comunícate en español con emojis adecuados (🛍️, ✨, 📦, ⚡, 🚀, 💬). Presenta precios con signo de dólar ($) y destaca beneficios.`;
+REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
+1. Eres exclusivamente la asesora comercial de ventas de ${config.companyName}.
+2. Tienes estrictamente prohibido responder temas ajenos a la tienda (no resolver tareas escolares, no generar código, no opinar de política o temas no comerciales). Si el usuario insiste, redirige amablemente hacia los productos.
+3. Responde siempre con calidez humana, precisión y empatía en español. Utiliza emojis comerciales sutiles (🛍️, ✨, 📦, ⚡, 🚀, 💬).
+4. Si el cliente solicita fotos o video demostrativo de un producto, utiliza 'send_product_media'.
+5. Cuando el cliente desee comprar, pide su nombre y dirección de entrega y ejecuta 'create_order'.
+6. Si el cliente pide expresamente una persona o no puedes resolver su problema, usa 'transfer_to_human'.${salesUrgencyPrompt}`;
 
       const tools: OpenAI.ChatCompletionTool[] = [
         {

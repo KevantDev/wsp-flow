@@ -18,6 +18,16 @@ import { BaileysFlowHandler } from './baileys-flow.handler';
 import { SessionStatus } from '../../domain/entities/whatsapp-session.entity';
 import { MessageSender } from '../../domain/entities/chat-session.entity';
 
+interface DebounceBuffer {
+  timer: NodeJS.Timeout;
+  messages: string[];
+  customerPhone: string;
+  customerName: string;
+  chatSessionId: string;
+  remoteJid: string;
+  lastMessageKey: any;
+}
+
 @Injectable()
 export class BaileysService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BaileysService.name);
@@ -27,6 +37,9 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
   private botPhoneNumber: string | null = null;
   private isConnecting = false;
   private readonly authFolder = path.resolve(process.cwd(), 'auth_info_baileys');
+
+  // Buffer de mensajes entrantes con debounce de 10 segundos
+  private messageBuffers = new Map<string, DebounceBuffer>();
 
   constructor(
     private readonly wsGateway: WhatsAppGateway,
@@ -44,6 +57,11 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    // Limpiar temporizadores pendientes
+    for (const buffer of this.messageBuffers.values()) {
+      clearTimeout(buffer.timer);
+    }
+    this.messageBuffers.clear();
     await this.disconnect();
   }
 
@@ -127,7 +145,7 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
         }
       });
 
-      // Manejo de mensajes entrantes con Anti-Ban
+      // Manejo de mensajes entrantes con Buffer de Debounce (10 Segundos) y Anti-Ban
       this.socket.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
 
@@ -152,7 +170,7 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
           // 1. Registrar o recuperar sesión de chat
           const chatSession = await this.chatRepo.findOrCreateSession(customerPhone, customerName);
 
-          // 2. Guardar mensaje entrante del cliente
+          // 2. Guardar mensaje entrante del cliente inmediatamente en base de datos
           const savedMsg = await this.chatRepo.saveMessage({
             chatSessionId: chatSession.id,
             sender: MessageSender.CUSTOMER,
@@ -161,73 +179,16 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
             whatsappMsgId: msg.key.id || undefined,
           });
 
-          // Notificar mensaje al frontend en tiempo real
+          // Notificar mensaje al Live Chat del panel de administración en tiempo real (0ms)
           this.wsGateway.emitNewChatMessage({
             ...savedMsg,
             customerPhone,
             customerName,
           });
 
-          // 3. Procesar respuesta automática si el bot está activo
+          // 3. Procesar respuesta automática mediante Buffer de Debounce si el bot está activo
           if (chatSession.isBotActive && this.socket) {
-            // Anti-Ban: 1. Marcar mensaje como leído con delay sutil
-            try {
-              await this.socket.readMessages([msg.key]);
-            } catch (e) {
-              // ignore
-            }
-
-            // Anti-Ban: 2. Calcular retardo humano aleatorio configurable
-            const config = await this.configRepo.getConfig();
-            const minDelay = config.antiBanDelayMinMs || 1500;
-            const maxDelay = config.antiBanDelayMaxMs || 3500;
-            const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-
-            // Anti-Ban: 3. Simular presencia "escribiendo..." (composing)
-            await this.socket.presenceSubscribe(remoteJid);
-            await this.socket.sendPresenceUpdate('composing', remoteJid);
-
-            const result = await this.flowHandler.handleIncomingMessage(
-              customerPhone,
-              customerName,
-              textContent,
-              chatSession.id,
-            );
-
-            // Esperar el delay humano aleatorio
-            await new Promise((r) => setTimeout(r, randomDelay));
-            await this.socket.sendPresenceUpdate('paused', remoteJid);
-
-            // Despacho de documento PDF
-            if (result?.documentPath && fs.existsSync(result.documentPath)) {
-              await this.socket.sendMessage(remoteJid, {
-                document: fs.readFileSync(result.documentPath),
-                mimetype: 'application/pdf',
-                fileName: result.documentFileName || 'Catalogo_WSP_Flow.pdf',
-                caption: result.replyText || '📄 *Catálogo Oficial de Productos*',
-              });
-
-              await this.chatRepo.saveMessage({
-                chatSessionId: chatSession.id,
-                sender: MessageSender.BOT,
-                senderName: 'Bot WSP',
-                content: `[Archivo PDF enviado: ${result.documentFileName || 'Catalogo_WSP_Flow.pdf'}] - ${result.replyText || ''}`,
-              });
-            }
-            // Despacho de imagen o video de producto
-            else if (result?.mediaUrl) {
-              await this.dispatchMediaMessage(
-                remoteJid,
-                result.mediaUrl,
-                result.mediaType || 'image',
-                result.caption || result.replyText,
-                chatSession.id,
-              );
-            }
-            // Despacho de texto estándar
-            else if (result?.replyText) {
-              await this.sendMessageDirect(remoteJid, result.replyText, MessageSender.BOT, chatSession.id);
-            }
+            this.scheduleDebouncedResponse(customerPhone, customerName, textContent, chatSession.id, remoteJid, msg.key);
           }
         }
       });
@@ -237,6 +198,128 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('Error inicializando Baileys:', error);
       this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED);
       await this.sessionRepo.updateStatus(SessionStatus.DISCONNECTED);
+    }
+  }
+
+  /**
+   * Programa la respuesta con debounce de 10 segundos. Si el usuario envía otro mensaje antes de los 10s,
+   * el temporizador se reinicia para esperar a que termine de escribir.
+   */
+  private scheduleDebouncedResponse(
+    customerPhone: string,
+    customerName: string,
+    messageText: string,
+    chatSessionId: string,
+    remoteJid: string,
+    messageKey: any,
+  ) {
+    const existing = this.messageBuffers.get(customerPhone);
+
+    if (existing) {
+      // Si ya hay un temporizador activo, cancelarlo y acumular el nuevo texto
+      clearTimeout(existing.timer);
+      existing.messages.push(messageText);
+      existing.lastMessageKey = messageKey;
+      this.logger.log(`⏳ [Debounce] Mensaje adicional de [${customerPhone}]. Total acumulados: ${existing.messages.length}. Reiniciando espera de 10s...`);
+
+      existing.timer = setTimeout(() => {
+        this.processBufferedMessages(customerPhone);
+      }, 10000); // 10 segundos
+    } else {
+      // Iniciar nuevo buffer con timer de 10 segundos
+      this.logger.log(`⏳ [Debounce] Primer mensaje de [${customerPhone}]. Iniciando buffer de 10s...`);
+      const timer = setTimeout(() => {
+        this.processBufferedMessages(customerPhone);
+      }, 10000); // 10 segundos
+
+      this.messageBuffers.set(customerPhone, {
+        timer,
+        messages: [messageText],
+        customerPhone,
+        customerName,
+        chatSessionId,
+        remoteJid,
+        lastMessageKey: messageKey,
+      });
+    }
+  }
+
+  /**
+   * Procesa y despacha todos los mensajes acumulados en un solo bloque coherente
+   */
+  private async processBufferedMessages(customerPhone: string) {
+    const buffer = this.messageBuffers.get(customerPhone);
+    if (!buffer || !this.socket) return;
+
+    this.messageBuffers.delete(customerPhone);
+
+    // Concatenar todos los fragmentos acumulados
+    const fullText = buffer.messages.join(' \n ');
+    this.logger.log(`🚀 [Debounce Finalizado] Procesando bloque consolidado de [${customerPhone}] (${buffer.messages.length} mensajes): "${fullText}"`);
+
+    try {
+      // Anti-Ban: 1. Marcar mensaje como leído
+      if (buffer.lastMessageKey) {
+        try {
+          await this.socket.readMessages([buffer.lastMessageKey]);
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Anti-Ban: 2. Calcular retardo humano aleatorio
+      const config = await this.configRepo.getConfig();
+      const minDelay = config.antiBanDelayMinMs || 1500;
+      const maxDelay = config.antiBanDelayMaxMs || 3500;
+      const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+
+      // Anti-Ban: 3. Simular presencia "escribiendo..." (composing)
+      await this.socket.presenceSubscribe(buffer.remoteJid);
+      await this.socket.sendPresenceUpdate('composing', buffer.remoteJid);
+
+      const result = await this.flowHandler.handleIncomingMessage(
+        buffer.customerPhone,
+        buffer.customerName,
+        fullText,
+        buffer.chatSessionId,
+      );
+
+      // Esperar delay humano de tipeo
+      await new Promise((r) => setTimeout(r, randomDelay));
+      await this.socket.sendPresenceUpdate('paused', buffer.remoteJid);
+
+      // Despacho de documento PDF
+      if (result?.documentPath && fs.existsSync(result.documentPath)) {
+        await this.socket.sendMessage(buffer.remoteJid, {
+          document: fs.readFileSync(result.documentPath),
+          mimetype: 'application/pdf',
+          fileName: result.documentFileName || 'Catalogo_WSP_Flow.pdf',
+          caption: result.replyText || '📄 *Catálogo Oficial de Productos*',
+        });
+
+        await this.chatRepo.saveMessage({
+          chatSessionId: buffer.chatSessionId,
+          sender: MessageSender.BOT,
+          senderName: 'Bot WSP',
+          content: `[Archivo PDF enviado: ${result.documentFileName || 'Catalogo_WSP_Flow.pdf'}] - ${result.replyText || ''}`,
+        });
+      }
+      // Despacho de imagen o video de producto
+      else if (result?.mediaUrl) {
+        await this.dispatchMediaMessage(
+          buffer.remoteJid,
+          result.mediaUrl,
+          result.mediaType || 'image',
+          result.caption || result.replyText,
+          buffer.chatSessionId,
+        );
+      }
+      // Despacho de texto estándar
+      else if (result?.replyText) {
+        await this.sendMessageDirect(buffer.remoteJid, result.replyText, MessageSender.BOT, buffer.chatSessionId);
+      }
+    } catch (err: any) {
+      this.logger.error(`Error procesando bloque de mensajes para [${customerPhone}]:`, err.message);
     }
   }
 
@@ -255,14 +338,12 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     try {
       let buffer: Buffer;
 
-      // Si es un archivo local de uploads
       if (mediaUrl.includes('/uploads/')) {
         const relativePath = mediaUrl.split('/uploads/')[1];
         const localPath = path.resolve(process.cwd(), 'uploads', relativePath);
         if (fs.existsSync(localPath)) {
           buffer = fs.readFileSync(localPath);
         } else {
-          // Intentar descargar vía HTTP
           const resp = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
           buffer = Buffer.from(resp.data);
         }
@@ -300,7 +381,6 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (err: any) {
       this.logger.error(`Error enviando multimedia a WhatsApp (${mediaUrl}):`, err.message);
-      // Fallback: enviar como texto
       await this.sendMessageDirect(remoteJid, caption, MessageSender.BOT, chatSessionId);
     }
   }

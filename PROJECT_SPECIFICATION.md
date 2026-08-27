@@ -551,6 +551,20 @@ mindmap
   - Carga de hasta **3 imágenes** de alta resolución y **1 video demostrativo** (peso máximo estricto de 10MB).
   - La IA tiene la capacidad de enviar fotos y videos de productos directamente al cliente por WhatsApp mediante Function Calling cuando el usuario solicita ver el artículo.
 
+### 7.8. Suite de Optimización de Tokens, Anti-Spam & Debounce Buffer (10 Segundos)
+- **Buffer Dinámico con Debounce de 10 Segundos (Rolling Timer):**
+  - Cuando un cliente envía ráfagas de mensajes cortos (*"hola"*, *"quiero ver"*, *"el reloj negro"*), el sistema no dispara múltiples llamadas a OpenAI.
+  - Se activa una ventana de espera de **10 segundos**. Si el cliente envía otro mensaje durante ese intervalo, el temporizador se reinicia a 10 segundos.
+  - Al cumplirse 10 segundos de inactividad, se concatenan todos los fragmentos en un único mensaje coherente y se ejecuta **1 sola consulta a la IA**.
+  - Los mensajes individuales se guardan y emiten al Live Chat en tiempo real para que el panel administrativo no sufra retrasos visuales.
+- **Filtro Determinístico Fast-Path (0 Tokens consumidos):**
+  - Respuestas automáticas ultrarrápidas y sin costo de OpenAI para saludos simples, agradecimientos (*"gracias"*, *"ok"*, *"listo"*, *"👍"*), despedidas y solicitud de catálogo PDF.
+- **Control de Preguntones Crónicos ("Tire-Kicker AI Management"):**
+  - Monitoreo del volumen de consultas por sesión. Si un usuario supera 10 preguntas sin ordenar, Luna adopta un tono de cierre persuasivo (*"¿Deseas que coordinemos el despacho hoy o prefieres que un asesor te llame?"*).
+  - Traspaso suave (*Handover*) a la bandeja de Live Chat humano al alcanzar el umbral máximo de interacción.
+- **Prompt Shielding & Anti-Jailbreak:**
+  - Cláusula de seguridad inviolable que prohíbe responder temas no comerciales, programar código o desviarse del catálogo.
+
 ---
 
 ## 8. Diseño UI/UX — Bento Grid & Tailwind CSS (Light Mode)
