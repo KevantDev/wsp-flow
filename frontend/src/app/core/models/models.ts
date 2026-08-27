@@ -67,6 +67,7 @@ export interface CompanyConfig {
   antiBanDelayMinMs: number;
   antiBanDelayMaxMs: number;
   historyMessageLimit: number;
+  createdAt?: string;
   updatedAt?: string;
 }
 

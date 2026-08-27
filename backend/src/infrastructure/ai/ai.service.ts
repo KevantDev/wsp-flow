@@ -58,7 +58,10 @@ export class AiService {
     try {
       // 1. Obtener la configuración dinámica de la empresa y la IA
       const config = await this.configRepo.getConfig();
-      const modelToUse = config.aiModel || this.defaultModel;
+      let modelToUse = config.aiModel || this.defaultModel || 'gpt-4o-mini';
+      if (modelToUse.includes('luna') || !modelToUse.startsWith('gpt-')) {
+        modelToUse = 'gpt-4o-mini';
+      }
       const temperature = config.aiTemperature ?? 0.7;
       const historyLimit = config.historyMessageLimit ?? 15;
 

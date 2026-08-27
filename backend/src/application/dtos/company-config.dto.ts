@@ -1,6 +1,15 @@
 import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UpdateCompanyConfigDto {
+  @IsOptional()
+  id?: string;
+
+  @IsOptional()
+  createdAt?: any;
+
+  @IsOptional()
+  updatedAt?: any;
+
   @IsString()
   @IsOptional()
   companyName?: string;

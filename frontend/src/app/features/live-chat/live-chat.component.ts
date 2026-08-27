@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -19,7 +19,7 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
 
     <div class="mt-4 sm:mt-6 h-[calc(100vh-130px)] sm:h-[calc(100vh-160px)] rounded-2xl md:rounded-3xl overflow-hidden bg-white border border-zinc-200/90 grid grid-cols-1 md:grid-cols-12 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_4px_20px_rgba(0,0,0,0.05)]">
       
-      <!-- Left Column: Conversations List (Visible on desktop or when no session selected on mobile) -->
+      <!-- Left Column: Conversations List -->
       <div [class]="'md:col-span-4 border-r border-zinc-200/80 flex flex-col h-full bg-zinc-50/50 ' + (activeSession() && isMobileView() ? 'hidden md:flex' : 'flex')">
         <!-- Search chats -->
         <div class="p-3.5 border-b border-zinc-200/80 bg-white">
@@ -92,10 +92,10 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
         </div>
       </div>
 
-      <!-- Right Column: Active Conversation (Visible on desktop or when session is active on mobile) -->
+      <!-- Right Column: Active Conversation -->
       <div [class]="'md:col-span-8 flex flex-col h-full bg-[#F8F9FB] ' + (!activeSession() && isMobileView() ? 'hidden md:flex' : 'flex')">
         @if (activeSession()) {
-          <!-- Chat Header with Back Button (mobile) and Human Takeover Switch -->
+          <!-- Chat Header -->
           <div class="p-3 sm:p-3.5 px-3 sm:px-5 border-b border-zinc-200/80 flex items-center justify-between bg-white">
             <div class="flex items-center gap-2 sm:gap-3">
               <!-- Back button on mobile -->
@@ -140,8 +140,8 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
             </div>
           </div>
 
-          <!-- Messages Stream Area -->
-          <div class="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3.5">
+          <!-- Messages Stream Area with Auto-Scroll -->
+          <div #scrollContainer class="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3.5 scroll-smooth">
             @for (msg of messages(); track msg.id) {
               <div [class]="'flex ' + (msg.sender === 'CUSTOMER' ? 'justify-start' : 'justify-end')">
                 
@@ -185,7 +185,7 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
               <button
                 type="submit"
                 [disabled]="!newMessageText.trim()"
-                class="btn-primary py-2 sm:py-2.5 px-4 sm:px-5 text-xs font-semibold whitespace-nowrap"
+                class="btn-primary py-2 sm:py-2.5 px-4 sm:px-5 text-xs font-semibold whitespace-nowrap active:scale-[0.98]"
               >
                 <span>Enviar</span>
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -214,6 +214,8 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
   `,
 })
 export class LiveChatComponent implements OnInit, OnDestroy {
+  @ViewChild('scrollContainer') private scrollContainer?: ElementRef;
+
   private chatService = inject(ChatService);
   private socketService = inject(SocketService);
   authService = inject(AuthService);
@@ -269,8 +271,17 @@ export class LiveChatComponent implements OnInit, OnDestroy {
     this.chatService.getSessionMessages(sessionId).subscribe({
       next: (msgs: ChatMessage[]) => {
         this.messages.set(msgs);
+        this.scrollToBottom();
       },
     });
+  }
+
+  scrollToBottom() {
+    setTimeout(() => {
+      if (this.scrollContainer?.nativeElement) {
+        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
+      }
+    }, 60);
   }
 
   setBotActive(active: boolean) {
@@ -297,6 +308,7 @@ export class LiveChatComponent implements OnInit, OnDestroy {
     this.chatService.sendMessage(s.customerPhone, text).subscribe({
       next: (msg: ChatMessage) => {
         this.messages.update((list) => [...list, msg]);
+        this.scrollToBottom();
       },
     });
   }
@@ -307,6 +319,7 @@ export class LiveChatComponent implements OnInit, OnDestroy {
         const active = this.activeSession();
         if (active && (msg.chatSessionId === active.id || msg.customerPhone === active.customerPhone)) {
           this.messages.update((list) => [...list, msg]);
+          this.scrollToBottom();
         }
         this.loadSessions();
       }),

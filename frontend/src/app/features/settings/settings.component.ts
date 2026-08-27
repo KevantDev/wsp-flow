@@ -145,9 +145,9 @@ import { CompanyConfig } from '../../core/models/models';
               <div>
                 <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Modelo OpenAI</label>
                 <select [(ngModel)]="config.aiModel" class="input-bento text-xs font-semibold">
-                  <option value="gpt-5.6-luna">OpenAI GPT-5.6-luna (Recomendado)</option>
-                  <option value="gpt-4o">OpenAI GPT-4o</option>
-                  <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                  <option value="gpt-4o-mini">OpenAI GPT-4o Mini (Ultra Rápido & Económico - Recomendado)</option>
+                  <option value="gpt-4o">OpenAI GPT-4o (Máxima Capacidad & Inteligencia)</option>
+                  <option value="gpt-3.5-turbo">OpenAI GPT-3.5 Turbo</option>
                 </select>
               </div>
 
@@ -261,7 +261,7 @@ export class SettingsComponent implements OnInit {
     paymentMethods: 'Transferencia bancaria, tarjetas de crédito/débito y pago contra entrega.',
     workingHours: 'Lunes a Sábado de 09:00 a 20:00',
     address: 'Av. Principal 1234, Centro',
-    aiModel: 'gpt-5.6-luna',
+    aiModel: 'gpt-4o-mini',
     aiTemperature: 0.7,
     antiBanDelayMinMs: 1500,
     antiBanDelayMaxMs: 3500,
@@ -284,16 +284,18 @@ export class SettingsComponent implements OnInit {
 
   saveSettings() {
     this.isSaving.set(true);
-    this.settingsService.updateConfig(this.config).subscribe({
+    const { id, createdAt, updatedAt, ...cleanPayload } = this.config;
+
+    this.settingsService.updateConfig(cleanPayload).subscribe({
       next: (updated) => {
         this.config = updated;
         this.isSaving.set(false);
         this.showSuccessToast.set(true);
         setTimeout(() => this.showSuccessToast.set(false), 4000);
       },
-      error: () => {
+      error: (err) => {
         this.isSaving.set(false);
-        alert('Error al guardar la configuración.');
+        alert(err.error?.message || 'Error al guardar la configuración.');
       },
     });
   }

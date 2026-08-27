@@ -43,7 +43,7 @@ export class PrismaCompanyConfigRepository implements ICompanyConfigRepository {
             'Transferencia bancaria, tarjetas de crédito/débito y pago contra entrega.',
           workingHours: 'Lunes a Sábado de 09:00 a 20:00',
           address: 'Av. Principal 1234, Centro',
-          aiModel: 'gpt-5.6-luna',
+          aiModel: 'gpt-4o-mini',
           aiTemperature: 0.7,
           antiBanDelayMinMs: 1500,
           antiBanDelayMaxMs: 3500,
@@ -56,22 +56,10 @@ export class PrismaCompanyConfigRepository implements ICompanyConfigRepository {
 
   async updateConfig(data: Partial<CompanyConfigEntity>): Promise<CompanyConfigEntity> {
     const current = await this.getConfig();
+    const { id, createdAt, updatedAt, ...cleanData } = data as any;
     const updated = await this.prisma.companyConfig.update({
       where: { id: current.id },
-      data: {
-        ...(data.companyName !== undefined && { companyName: data.companyName }),
-        ...(data.businessDescription !== undefined && { businessDescription: data.businessDescription }),
-        ...(data.systemPrompt !== undefined && { systemPrompt: data.systemPrompt }),
-        ...(data.shippingPolicy !== undefined && { shippingPolicy: data.shippingPolicy }),
-        ...(data.paymentMethods !== undefined && { paymentMethods: data.paymentMethods }),
-        ...(data.workingHours !== undefined && { workingHours: data.workingHours }),
-        ...(data.address !== undefined && { address: data.address }),
-        ...(data.aiModel !== undefined && { aiModel: data.aiModel }),
-        ...(data.aiTemperature !== undefined && { aiTemperature: data.aiTemperature }),
-        ...(data.antiBanDelayMinMs !== undefined && { antiBanDelayMinMs: data.antiBanDelayMinMs }),
-        ...(data.antiBanDelayMaxMs !== undefined && { antiBanDelayMaxMs: data.antiBanDelayMaxMs }),
-        ...(data.historyMessageLimit !== undefined && { historyMessageLimit: data.historyMessageLimit }),
-      },
+      data: cleanData,
     });
     return this.mapToEntity(updated);
   }

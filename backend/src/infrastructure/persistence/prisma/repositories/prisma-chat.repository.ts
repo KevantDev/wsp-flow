@@ -131,13 +131,13 @@ export class PrismaChatRepository implements IChatRepository {
     return this.mapMessage(message);
   }
 
-  async getMessages(chatSessionId: string, limit = 50): Promise<ChatMessageEntity[]> {
+  async getMessages(chatSessionId: string, limit = 100): Promise<ChatMessageEntity[]> {
     const messages = await this.prisma.chatMessage.findMany({
       where: { chatSessionId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       take: limit,
     });
-    return messages.map((m) => this.mapMessage(m));
+    return messages.reverse().map((m) => this.mapMessage(m));
   }
 
   async markMessagesAsRead(chatSessionId: string): Promise<void> {
