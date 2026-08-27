@@ -46,10 +46,28 @@ export interface Product {
   stock: number;
   minStockAlert: number;
   isAvailable: boolean;
+  videoUrl?: string;
   categoryId: string;
   categoryName?: string;
   images?: ProductImage[];
   createdAt?: string;
+}
+
+export interface CompanyConfig {
+  id?: string;
+  companyName: string;
+  businessDescription: string;
+  systemPrompt: string;
+  shippingPolicy: string;
+  paymentMethods: string;
+  workingHours: string;
+  address: string;
+  aiModel: string;
+  aiTemperature: number;
+  antiBanDelayMinMs: number;
+  antiBanDelayMaxMs: number;
+  historyMessageLimit: number;
+  updatedAt?: string;
 }
 
 export enum OrderStatus {

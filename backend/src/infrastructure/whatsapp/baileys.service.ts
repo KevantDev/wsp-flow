@@ -9,9 +9,11 @@ import * as QRCode from 'qrcode';
 import pino from 'pino';
 import * as path from 'path';
 import * as fs from 'fs';
+import axios from 'axios';
 import { WhatsAppGateway } from '../../presentation/gateways/whatsapp.gateway';
 import { PrismaWhatsAppSessionRepository } from '../persistence/prisma/repositories/prisma-whatsapp-session.repository';
 import { PrismaChatRepository } from '../persistence/prisma/repositories/prisma-chat.repository';
+import { PrismaCompanyConfigRepository } from '../persistence/prisma/repositories/prisma-company-config.repository';
 import { BaileysFlowHandler } from './baileys-flow.handler';
 import { SessionStatus } from '../../domain/entities/whatsapp-session.entity';
 import { MessageSender } from '../../domain/entities/chat-session.entity';
@@ -30,11 +32,11 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     private readonly wsGateway: WhatsAppGateway,
     private readonly sessionRepo: PrismaWhatsAppSessionRepository,
     private readonly chatRepo: PrismaChatRepository,
+    private readonly configRepo: PrismaCompanyConfigRepository,
     private readonly flowHandler: BaileysFlowHandler,
   ) {}
 
   async onModuleInit() {
-    // Si existe sesión previa en disco, intentar autoconectar
     if (fs.existsSync(this.authFolder) && fs.readdirSync(this.authFolder).length > 0) {
       this.logger.log('📂 Sesión previa de Baileys detectada. Iniciando autoconexión...');
       setTimeout(() => this.initializeSocket(), 2000);
@@ -61,7 +63,6 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
       }
 
       const { state, saveCreds } = await useMultiFileAuthState(this.authFolder);
-
       const pinoLogger = pino({ level: 'silent' });
 
       this.socket = makeWASocket({
@@ -96,7 +97,9 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-          this.logger.warn(`🔌 Conexión Baileys cerrada. Código: ${statusCode}, Reintentar: ${shouldReconnect}`);
+          this.logger.warn(
+            `🔌 Conexión Baileys cerrada. Código: ${statusCode}, Reintentar: ${shouldReconnect}`,
+          );
           this.connectionStatus = SessionStatus.DISCONNECTED;
           this.qrCodeDataUrl = null;
           this.botPhoneNumber = null;
@@ -124,14 +127,14 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
         }
       });
 
-      // Manejo de mensajes entrantes
+      // Manejo de mensajes entrantes con Anti-Ban
       this.socket.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
 
         for (const msg of m.messages) {
           if (msg.key.fromMe || !msg.message) continue;
 
-          // Ignorar mensajes de grupos y estados/broadcast
+          // Ignorar mensajes de grupos y broadcasts
           const remoteJid = msg.key.remoteJid || '';
           if (remoteJid.endsWith('@g.us') || remoteJid === 'status@broadcast') continue;
 
@@ -158,24 +161,44 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
             whatsappMsgId: msg.key.id || undefined,
           });
 
-          // Notificar mensaje al frontend en vivo
+          // Notificar mensaje al frontend en tiempo real
           this.wsGateway.emitNewChatMessage({
             ...savedMsg,
             customerPhone,
             customerName,
           });
 
-          // 3. Si el bot está activo para este chat, procesar respuesta automática
-          if (chatSession.isBotActive) {
-            // Breve retardo natural de escritura
+          // 3. Procesar respuesta automática si el bot está activo
+          if (chatSession.isBotActive && this.socket) {
+            // Anti-Ban: 1. Marcar mensaje como leído con delay sutil
+            try {
+              await this.socket.readMessages([msg.key]);
+            } catch (e) {
+              // ignore
+            }
+
+            // Anti-Ban: 2. Calcular retardo humano aleatorio configurable
+            const config = await this.configRepo.getConfig();
+            const minDelay = config.antiBanDelayMinMs || 1500;
+            const maxDelay = config.antiBanDelayMaxMs || 3500;
+            const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+
+            // Anti-Ban: 3. Simular presencia "escribiendo..." (composing)
             await this.socket.presenceSubscribe(remoteJid);
             await this.socket.sendPresenceUpdate('composing', remoteJid);
 
-            const result = await this.flowHandler.handleIncomingMessage(customerPhone, customerName, textContent);
+            const result = await this.flowHandler.handleIncomingMessage(
+              customerPhone,
+              customerName,
+              textContent,
+              chatSession.id,
+            );
 
-            await new Promise((r) => setTimeout(r, 1000));
+            // Esperar el delay humano aleatorio
+            await new Promise((r) => setTimeout(r, randomDelay));
             await this.socket.sendPresenceUpdate('paused', remoteJid);
 
+            // Despacho de documento PDF
             if (result?.documentPath && fs.existsSync(result.documentPath)) {
               await this.socket.sendMessage(remoteJid, {
                 document: fs.readFileSync(result.documentPath),
@@ -190,7 +213,19 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
                 senderName: 'Bot WSP',
                 content: `[Archivo PDF enviado: ${result.documentFileName || 'Catalogo_WSP_Flow.pdf'}] - ${result.replyText || ''}`,
               });
-            } else if (result?.replyText) {
+            }
+            // Despacho de imagen o video de producto
+            else if (result?.mediaUrl) {
+              await this.dispatchMediaMessage(
+                remoteJid,
+                result.mediaUrl,
+                result.mediaType || 'image',
+                result.caption || result.replyText,
+                chatSession.id,
+              );
+            }
+            // Despacho de texto estándar
+            else if (result?.replyText) {
               await this.sendMessageDirect(remoteJid, result.replyText, MessageSender.BOT, chatSession.id);
             }
           }
@@ -202,6 +237,71 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('Error inicializando Baileys:', error);
       this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED);
       await this.sessionRepo.updateStatus(SessionStatus.DISCONNECTED);
+    }
+  }
+
+  /**
+   * Despacha un archivo multimedia (imagen o video) al chat de WhatsApp
+   */
+  async dispatchMediaMessage(
+    remoteJid: string,
+    mediaUrl: string,
+    mediaType: 'image' | 'video' | 'document',
+    caption: string = '',
+    chatSessionId: string,
+  ) {
+    if (!this.socket) return;
+
+    try {
+      let buffer: Buffer;
+
+      // Si es un archivo local de uploads
+      if (mediaUrl.includes('/uploads/')) {
+        const relativePath = mediaUrl.split('/uploads/')[1];
+        const localPath = path.resolve(process.cwd(), 'uploads', relativePath);
+        if (fs.existsSync(localPath)) {
+          buffer = fs.readFileSync(localPath);
+        } else {
+          // Intentar descargar vía HTTP
+          const resp = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+          buffer = Buffer.from(resp.data);
+        }
+      } else {
+        const resp = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+        buffer = Buffer.from(resp.data);
+      }
+
+      if (mediaType === 'video') {
+        await this.socket.sendMessage(remoteJid, {
+          video: buffer,
+          caption,
+          mimetype: 'video/mp4',
+        });
+      } else {
+        await this.socket.sendMessage(remoteJid, {
+          image: buffer,
+          caption,
+        });
+      }
+
+      const savedMsg = await this.chatRepo.saveMessage({
+        chatSessionId,
+        sender: MessageSender.BOT,
+        senderName: 'Bot WSP',
+        content: `[${mediaType === 'video' ? 'Video' : 'Imagen'} enviada] ${caption}`,
+        mediaUrl,
+        mediaType,
+      });
+
+      const phone = remoteJid.replace('@s.whatsapp.net', '');
+      this.wsGateway.emitNewChatMessage({
+        ...savedMsg,
+        customerPhone: phone,
+      });
+    } catch (err: any) {
+      this.logger.error(`Error enviando multimedia a WhatsApp (${mediaUrl}):`, err.message);
+      // Fallback: enviar como texto
+      await this.sendMessageDirect(remoteJid, caption, MessageSender.BOT, chatSessionId);
     }
   }
 

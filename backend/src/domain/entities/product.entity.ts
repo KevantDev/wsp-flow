@@ -20,6 +20,7 @@ export class ProductEntity {
   isAvailable: boolean;
   categoryId: string;
   categoryName?: string;
+  videoUrl?: string;
   images?: ProductImageEntity[];
   createdAt: Date;
   updatedAt: Date;

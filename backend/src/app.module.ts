@@ -11,6 +11,7 @@ import { PrismaCategoryRepository } from './infrastructure/persistence/prisma/re
 import { PrismaOrderRepository } from './infrastructure/persistence/prisma/repositories/prisma-order.repository';
 import { PrismaChatRepository } from './infrastructure/persistence/prisma/repositories/prisma-chat.repository';
 import { PrismaWhatsAppSessionRepository } from './infrastructure/persistence/prisma/repositories/prisma-whatsapp-session.repository';
+import { PrismaCompanyConfigRepository } from './infrastructure/persistence/prisma/repositories/prisma-company-config.repository';
 
 // Infrastructure - WhatsApp Engine
 import { BaileysService } from './infrastructure/whatsapp/baileys.service';
@@ -26,6 +27,7 @@ import { OrdersService } from './application/services/orders.service';
 import { ChatService } from './application/services/chat.service';
 import { UsersService } from './application/services/users.service';
 import { DashboardService } from './application/services/dashboard.service';
+import { CompanyConfigService } from './application/services/company-config.service';
 
 // Presentation - Gateways & Controllers
 import { WhatsAppGateway } from './presentation/gateways/whatsapp.gateway';
@@ -38,6 +40,7 @@ import { ChatController } from './presentation/controllers/chat.controller';
 import { UsersController } from './presentation/controllers/users.controller';
 import { DashboardController } from './presentation/controllers/dashboard.controller';
 import { UploadController } from './presentation/controllers/upload.controller';
+import { CompanyConfigController } from './presentation/controllers/company-config.controller';
 
 // Core Security
 import { JwtStrategy } from './core/strategies/jwt.strategy';
@@ -62,6 +65,7 @@ import { RolesGuard } from './core/guards/roles.guard';
     UsersController,
     DashboardController,
     UploadController,
+    CompanyConfigController,
   ],
   providers: [
     // Prisma & Repositories
@@ -72,6 +76,11 @@ import { RolesGuard } from './core/guards/roles.guard';
     PrismaOrderRepository,
     PrismaChatRepository,
     PrismaWhatsAppSessionRepository,
+    PrismaCompanyConfigRepository,
+    {
+      provide: 'ICompanyConfigRepository',
+      useClass: PrismaCompanyConfigRepository,
+    },
 
     // WhatsApp Engine & AI Assistant & PDF Generator
     BaileysService,
@@ -88,6 +97,7 @@ import { RolesGuard } from './core/guards/roles.guard';
     ChatService,
     UsersService,
     DashboardService,
+    CompanyConfigService,
 
     // Security & Guards
     JwtStrategy,

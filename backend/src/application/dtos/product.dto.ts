@@ -49,6 +49,10 @@ export class CreateProductDto {
   @IsNotEmpty({ message: 'La categoría es obligatoria' })
   categoryId: string;
 
+  @IsString()
+  @IsOptional()
+  videoUrl?: string;
+
   @IsArray()
   @IsOptional()
   images?: ProductImageDto[];
@@ -90,6 +94,10 @@ export class UpdateProductDto {
   @IsString()
   @IsOptional()
   categoryId?: string;
+
+  @IsString()
+  @IsOptional()
+  videoUrl?: string;
 
   @IsArray()
   @IsOptional()

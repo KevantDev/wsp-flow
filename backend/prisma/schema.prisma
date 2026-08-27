@@ -85,6 +85,7 @@ model Product {
   stock          Int            @default(0)
   minStockAlert  Int            @default(5)
   isAvailable    Boolean        @default(true)
+  videoUrl       String?
   categoryId     String
   category       Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   createdAt      DateTime       @default(now())
@@ -227,3 +228,24 @@ model AuditLog {
 
   @@map("audit_logs")
 }
+
+model CompanyConfig {
+  id                  String   @id @default(uuid())
+  companyName         String   @default("WSP Flow Commerce")
+  businessDescription String   @default("Tienda digital multirubro de comercio electrónico con atención y ventas automatizadas 24/7.")
+  systemPrompt        String   @default("Eres Luna, la asesora comercial y asistente virtual de ventas experta de WSP Flow. Tu objetivo es asesorar a los clientes con calidez y precisión, responder dudas sobre productos, verificar stock real, enviar fotos o videos cuando lo soliciten y concretar pedidos de compra de forma fluida.")
+  shippingPolicy      String   @default("Envíos express a todo el país en 24 a 48 horas hábiles.")
+  paymentMethods      String   @default("Transferencia bancaria, tarjetas de crédito/débito y pago contra entrega.")
+  workingHours        String   @default("Lunes a Sábado de 09:00 a 20:00")
+  address             String   @default("Av. Principal 1234, Centro")
+  aiModel             String   @default("gpt-5.6-luna")
+  aiTemperature       Float    @default(0.7)
+  antiBanDelayMinMs   Int      @default(1500)
+  antiBanDelayMaxMs   Int      @default(3500)
+  historyMessageLimit Int      @default(15)
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+
+  @@map("company_config")
+}
+

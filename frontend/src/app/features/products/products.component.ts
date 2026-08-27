@@ -7,16 +7,16 @@ import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { ProductsService } from '../../core/services/products.service';
 import { UploadService } from '../../core/services/upload.service';
 import { AuthService } from '../../core/services/auth.service';
-import { Product, Category } from '../../core/models/models';
+import { Product, Category, ProductImage } from '../../core/models/models';
 
 @Component({
   selector: 'app-products',
   standalone: true,
   imports: [CommonModule, FormsModule, NavbarComponent, BentoCardComponent, BadgeComponent],
   template: `
-    <app-navbar title="Catálogo & Inventario" subtitle="Gestión de productos, precios y control de stock"></app-navbar>
+    <app-navbar title="Catálogo & Inventario" subtitle="Gestión de productos, fotos, videos demostrativos y stock"></app-navbar>
 
-    <div class="space-y-6 mt-6">
+    <div class="space-y-6 mt-6 pb-12">
       
       <!-- Top Action Bar -->
       <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
@@ -60,8 +60,8 @@ import { Product, Category } from '../../core/models/models';
           <button
             (click)="downloadPdf()"
             [disabled]="isGeneratingPdf()"
-            class="btn-secondary whitespace-nowrap"
-            title="Generar y descargar catálogo en formato PDF profesional"
+            class="btn-secondary whitespace-nowrap text-xs"
+            title="Generar y descargar catálogo en PDF profesional"
           >
             @if (isGeneratingPdf()) {
               <span class="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
@@ -74,7 +74,7 @@ import { Product, Category } from '../../core/models/models';
             }
           </button>
 
-          <button (click)="openCreateModal()" class="btn-primary whitespace-nowrap">
+          <button (click)="openCreateModal()" class="btn-primary whitespace-nowrap text-xs">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
             </svg>
@@ -91,26 +91,39 @@ import { Product, Category } from '../../core/models/models';
               <!-- Product Image Frame -->
               <div class="relative w-full h-44 rounded-2xl overflow-hidden bg-zinc-100 mb-4 border border-zinc-200/80">
                 <img
-                  [src]="product.images?.[0]?.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&auto=format&fit=crop&q=80'"
+                  [src]="getPrimaryImage(product)"
                   [alt]="product.name"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                 />
                 
-                <!-- SKU Badge -->
-                <div class="absolute top-2.5 left-2.5">
-                  <span class="px-2 py-0.5 rounded-lg bg-white/95 backdrop-blur-sm text-[10px] font-mono font-bold text-zinc-800 border border-zinc-200 shadow-xs">
+                <!-- SKU & Media Badges -->
+                <div class="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
+                  <span class="px-2 py-0.5 rounded-lg bg-white/95 backdrop-blur-sm text-[10px] font-mono font-bold text-zinc-800 border border-zinc-200 shadow-sm">
                     {{ product.sku }}
                   </span>
+                  @if (product.videoUrl) {
+                    <span class="px-2 py-0.5 rounded-lg bg-indigo-600/90 backdrop-blur-sm text-[10px] font-bold text-white shadow-sm flex items-center gap-1">
+                      <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                      </svg>
+                      Video Demo
+                    </span>
+                  }
+                  @if ((product.images?.length || 0) > 1) {
+                    <span class="px-2 py-0.5 rounded-lg bg-zinc-900/80 backdrop-blur-sm text-[10px] font-semibold text-white shadow-sm">
+                      📸 {{ product.images?.length }} fotos
+                    </span>
+                  }
                 </div>
 
-                <!-- Stock status on image -->
+                <!-- Stock status badge -->
                 <div class="absolute top-2.5 right-2.5">
                   @if (product.stock <= product.minStockAlert) {
-                    <span class="px-2 py-0.5 rounded-lg bg-rose-500 text-white text-[10px] font-bold shadow-xs">
+                    <span class="px-2 py-0.5 rounded-lg bg-rose-500 text-white text-[10px] font-bold shadow-sm">
                       Bajo Stock ({{ product.stock }})
                     </span>
                   } @else {
-                    <span class="px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-bold shadow-xs">
+                    <span class="px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
                       Stock: {{ product.stock }}
                     </span>
                   }
@@ -138,7 +151,7 @@ import { Product, Category } from '../../core/models/models';
                 </div>
                 
                 <!-- Quick Stock Adjuster -->
-                <div class="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-200 shadow-xs">
+                <div class="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-200 shadow-sm">
                   <button
                     (click)="adjustStock(product, -1)"
                     class="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-900 hover:bg-white rounded-lg text-sm font-bold transition-all"
@@ -196,15 +209,18 @@ import { Product, Category } from '../../core/models/models';
 
     </div>
 
-    <!-- Product Create/Edit Modal with Image Uploading -->
+    <!-- Product Create/Edit Modal with Multi-Images (3 max) and Video (10MB max) -->
     @if (isModalOpen()) {
       <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-900/40 backdrop-blur-sm animate-fade-in overflow-y-auto">
-        <div class="relative w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-white border border-zinc-200 shadow-2xl p-5 sm:p-7">
+        <div class="relative w-full max-w-xl max-h-[94vh] overflow-y-auto rounded-3xl bg-white border border-zinc-200 shadow-2xl p-5 sm:p-7">
           
           <div class="flex items-center justify-between mb-5">
-            <h3 class="text-lg font-bold text-zinc-900">
-              {{ editingProduct() ? 'Editar Producto' : 'Crear Nuevo Producto' }}
-            </h3>
+            <div>
+              <h3 class="text-lg font-bold text-zinc-900">
+                {{ editingProduct() ? 'Editar Producto' : 'Crear Nuevo Producto' }}
+              </h3>
+              <p class="text-xs text-zinc-500 mt-0.5">Configura detalles, fotos (hasta 3) y video demostrativo (&lt; 10MB)</p>
+            </div>
             <button (click)="isModalOpen.set(false)" class="p-2 text-zinc-400 hover:text-zinc-700 rounded-xl hover:bg-zinc-100 transition-colors">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -215,17 +231,17 @@ import { Product, Category } from '../../core/models/models';
           <form (ngSubmit)="saveProduct()" class="space-y-4">
             <div>
               <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Nombre del Producto</label>
-              <input type="text" [(ngModel)]="formData.name" name="name" required placeholder="Ej: Auriculares Bluetooth Pro" class="input-bento" />
+              <input type="text" [(ngModel)]="formData.name" name="name" required placeholder="Ej: Auriculares Bluetooth Pro" class="input-bento text-xs" />
             </div>
 
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Código / SKU</label>
-                <input type="text" [(ngModel)]="formData.sku" name="sku" required class="input-bento font-mono uppercase" />
+                <input type="text" [(ngModel)]="formData.sku" name="sku" required class="input-bento font-mono uppercase text-xs" />
               </div>
               <div>
                 <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Categoría</label>
-                <select [(ngModel)]="formData.categoryId" name="categoryId" required class="input-bento">
+                <select [(ngModel)]="formData.categoryId" name="categoryId" required class="input-bento text-xs">
                   @for (c of categories(); track c.id) {
                     <option [value]="c.id">{{ c.name }}</option>
                   }
@@ -236,96 +252,158 @@ import { Product, Category } from '../../core/models/models';
             <div class="grid grid-cols-3 gap-3">
               <div>
                 <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Precio ($)</label>
-                <input type="number" step="0.01" [(ngModel)]="formData.price" name="price" required class="input-bento font-mono" />
+                <input type="number" step="0.01" [(ngModel)]="formData.price" name="price" required class="input-bento font-mono text-xs" />
               </div>
               <div>
                 <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Stock</label>
-                <input type="number" [(ngModel)]="formData.stock" name="stock" required class="input-bento font-mono" />
+                <input type="number" [(ngModel)]="formData.stock" name="stock" required class="input-bento font-mono text-xs" />
               </div>
               <div>
                 <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Alerta Mín.</label>
-                <input type="number" [(ngModel)]="formData.minStockAlert" name="minStockAlert" class="input-bento font-mono" />
+                <input type="number" [(ngModel)]="formData.minStockAlert" name="minStockAlert" class="input-bento font-mono text-xs" />
               </div>
             </div>
 
-            <!-- Image Upload & Preview Section -->
-            <div class="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-3">
+            <!-- Multi-Image Upload (Up to 3 Images) -->
+            <div class="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200/80 space-y-3">
               <div class="flex items-center justify-between">
-                <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold">
-                  Fotografía del Producto
-                </label>
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    (click)="imageSourceMode.set('upload')"
-                    [class]="'px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ' + (imageSourceMode() === 'upload' ? 'bg-white text-zinc-900 border border-zinc-200 shadow-xs' : 'text-zinc-500 hover:text-zinc-800')"
-                  >
-                    Subir Archivo
-                  </button>
-                  <button
-                    type="button"
-                    (click)="imageSourceMode.set('url')"
-                    [class]="'px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ' + (imageSourceMode() === 'url' ? 'bg-white text-zinc-900 border border-zinc-200 shadow-xs' : 'text-zinc-500 hover:text-zinc-800')"
-                  >
-                    Enlace Web
-                  </button>
+                <div>
+                  <label class="block text-zinc-700 font-bold text-xs">
+                    📸 Fotografías del Producto (Hasta 3)
+                  </label>
+                  <span class="text-[10px] text-zinc-400">La foto con estrella ⭐ es la principal para el catálogo.</span>
                 </div>
+                <span class="text-[11px] font-mono font-bold" [class.text-indigo-600]="formData.images.length < 3" [class.text-rose-500]="formData.images.length >= 3">
+                  {{ formData.images.length }} / 3
+                </span>
               </div>
 
-              <!-- Upload File Mode -->
-              @if (imageSourceMode() === 'upload') {
-                <div
-                  (dragover)="onDragOver($event)"
-                  (dragleave)="onDragLeave($event)"
-                  (drop)="onDrop($event)"
-                  (click)="fileInput.click()"
-                  [class]="'border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all ' + (isDragging() ? 'border-indigo-500 bg-indigo-50/50' : 'border-zinc-300 bg-white hover:border-indigo-400 hover:bg-zinc-50/50')"
-                >
-                  <input
-                    #fileInput
-                    type="file"
-                    accept="image/*"
-                    (change)="onFileSelected($event)"
-                    class="hidden"
-                  />
-                  
-                  @if (isUploading()) {
-                    <div class="flex flex-col items-center gap-2 py-2">
-                      <div class="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span class="text-xs font-semibold text-indigo-600">Subiendo imagen al servidor...</span>
-                    </div>
-                  } @else if (formData.imageUrl) {
-                    <div class="flex items-center gap-3">
-                      <img [src]="formData.imageUrl" alt="Preview" class="w-14 h-14 object-cover rounded-xl border border-zinc-200 shadow-xs" />
-                      <div class="text-left min-w-0 flex-1">
-                        <span class="text-xs font-bold text-zinc-900 block truncate">Imagen Cargada con Éxito</span>
-                        <span class="text-[11px] text-zinc-500 block truncate">Haz clic para cambiar por otra foto</span>
+              <!-- Thumbnails Grid -->
+              @if (formData.images.length > 0) {
+                <div class="grid grid-cols-3 gap-2.5">
+                  @for (img of formData.images; track $index) {
+                    <div class="relative group rounded-xl overflow-hidden border border-zinc-200 bg-white aspect-square shadow-sm">
+                      <img [src]="img.imageUrl" alt="Preview" class="w-full h-full object-cover" />
+                      
+                      <!-- Action Overlay -->
+                      <div class="absolute inset-0 bg-zinc-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          (click)="setPrimaryImage($index)"
+                          [class]="'p-1.5 rounded-lg text-xs font-bold ' + (img.isPrimary ? 'bg-amber-400 text-zinc-900' : 'bg-white/80 text-zinc-800 hover:bg-white')"
+                          title="Establecer como foto principal"
+                        >
+                          ⭐
+                        </button>
+                        <button
+                          type="button"
+                          (click)="removeImage($index)"
+                          class="p-1.5 rounded-lg bg-rose-500 text-white text-xs hover:bg-rose-600"
+                          title="Eliminar foto"
+                        >
+                          ✕
+                        </button>
                       </div>
-                    </div>
-                  } @else {
-                    <div class="py-2 text-zinc-500">
-                      <svg class="w-7 h-7 mx-auto text-zinc-400 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span class="text-xs font-bold text-zinc-800 block">Arrastra una imagen o haz clic para buscar</span>
-                      <span class="text-[10px] text-zinc-400 block mt-0.5">JPG, PNG, WEBP hasta 5MB</span>
+
+                      @if (img.isPrimary) {
+                        <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-amber-400 text-[9px] font-bold text-zinc-900 shadow-sm">
+                          Principal
+                        </span>
+                      }
                     </div>
                   }
                 </div>
-              } @else {
-                <!-- URL Mode -->
-                <div>
+              }
+
+              <!-- Upload trigger if < 3 -->
+              @if (formData.images.length < 3) {
+                <div
+                  (click)="imageFileInput.click()"
+                  class="border-2 border-dashed border-zinc-300 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all"
+                >
                   <input
-                    type="url"
-                    [(ngModel)]="formData.imageUrl"
-                    name="imageUrl"
-                    placeholder="https://images.unsplash.com/..."
-                    class="input-bento"
+                    #imageFileInput
+                    type="file"
+                    accept="image/*"
+                    (change)="onImageSelected($event)"
+                    class="hidden"
                   />
-                  @if (formData.imageUrl) {
-                    <div class="mt-2 flex items-center gap-2">
-                      <img [src]="formData.imageUrl" alt="Preview" class="w-10 h-10 object-cover rounded-lg border border-zinc-200" />
-                      <span class="text-xs text-zinc-600 truncate">Vista previa cargada</span>
+                  @if (isUploadingImage()) {
+                    <div class="flex items-center justify-center gap-2 text-xs text-indigo-600 font-semibold py-1">
+                      <span class="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                      <span>Subiendo imagen...</span>
+                    </div>
+                  } @else {
+                    <div class="flex items-center justify-center gap-1.5 text-xs text-zinc-600 font-semibold py-1">
+                      <svg class="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>Agregar Foto (+{{ 3 - formData.images.length }} disponibles)</span>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
+            <!-- Single Video Upload (Up to 1 Video, Max 10MB) -->
+            <div class="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200/80 space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="block text-zinc-700 font-bold text-xs">
+                    🎥 Video Demostrativo del Producto (Máx. 10MB)
+                  </label>
+                  <span class="text-[10px] text-zinc-400">Luna enviará este video cuando un cliente pregunte por video o funcionamiento.</span>
+                </div>
+              </div>
+
+              @if (formData.videoUrl) {
+                <div class="relative rounded-xl overflow-hidden border border-zinc-200 bg-black/5 p-2 flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                      </svg>
+                    </div>
+                    <div class="min-w-0">
+                      <span class="text-xs font-bold text-zinc-900 block truncate">Video Cargado</span>
+                      <a [href]="formData.videoUrl" target="_blank" class="text-[10px] text-indigo-600 hover:underline block truncate">Ver video en pestaña nueva</a>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="formData.videoUrl = ''"
+                    class="btn-danger p-2 text-xs shrink-0"
+                    title="Eliminar video"
+                  >
+                    ✕
+                  </button>
+                </div>
+              } @else {
+                <div
+                  (click)="videoFileInput.click()"
+                  class="border-2 border-dashed border-zinc-300 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all"
+                >
+                  <input
+                    #videoFileInput
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime,video/mov"
+                    (change)="onVideoSelected($event)"
+                    class="hidden"
+                  />
+                  @if (isUploadingVideo()) {
+                    <div class="flex items-center justify-center gap-2 text-xs text-indigo-600 font-semibold py-1">
+                      <span class="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                      <span>Subiendo video (&lt; 10MB)...</span>
+                    </div>
+                  } @else {
+                    <div class="flex flex-col items-center gap-0.5 py-1">
+                      <div class="flex items-center gap-1.5 text-xs text-zinc-700 font-semibold">
+                        <svg class="w-4 h-4 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                        </svg>
+                        <span>Subir Video Demostrativo</span>
+                      </div>
+                      <span class="text-[10px] text-zinc-400">MP4, WEBM o MOV (Máximo estricto: 10MB)</span>
                     </div>
                   }
                 </div>
@@ -333,13 +411,15 @@ import { Product, Category } from '../../core/models/models';
             </div>
 
             <div>
-              <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Descripción</label>
-              <textarea [(ngModel)]="formData.description" name="description" rows="2" placeholder="Detalles y características para WhatsApp..." class="input-bento resize-none"></textarea>
+              <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Descripción & Ficha Técnica</label>
+              <textarea [(ngModel)]="formData.description" name="description" rows="2" placeholder="Detalles y características para que Luna responda a las dudas del cliente..." class="input-bento text-xs resize-none"></textarea>
             </div>
 
             <div class="pt-3 border-t border-zinc-100 flex items-center justify-end gap-2.5">
-              <button type="button" (click)="isModalOpen.set(false)" class="btn-secondary">Cancelar</button>
-              <button type="submit" [disabled]="isUploading()" class="btn-primary">Guardar Producto</button>
+              <button type="button" (click)="isModalOpen.set(false)" class="btn-secondary text-xs">Cancelar</button>
+              <button type="submit" [disabled]="isUploadingImage() || isUploadingVideo()" class="btn-primary text-xs">
+                Guardar Producto
+              </button>
             </div>
           </form>
 
@@ -362,9 +442,8 @@ export class ProductsComponent implements OnInit {
   isModalOpen = signal(false);
   editingProduct = signal<Product | null>(null);
 
-  imageSourceMode = signal<'upload' | 'url'>('upload');
-  isUploading = signal(false);
-  isDragging = signal(false);
+  isUploadingImage = signal(false);
+  isUploadingVideo = signal(false);
   isGeneratingPdf = signal(false);
 
   formData = {
@@ -375,8 +454,9 @@ export class ProductsComponent implements OnInit {
     costPrice: 0,
     stock: 0,
     minStockAlert: 5,
-    imageUrl: '',
     description: '',
+    videoUrl: '',
+    images: [] as { imageUrl: string; isPrimary: boolean }[],
   };
 
   ngOnInit() {
@@ -421,6 +501,14 @@ export class ProductsComponent implements OnInit {
     this.filteredProducts.set(result);
   }
 
+  getPrimaryImage(product: Product): string {
+    if (product.images && product.images.length > 0) {
+      const primary = product.images.find((img) => img.isPrimary);
+      return primary ? primary.imageUrl : product.images[0].imageUrl;
+    }
+    return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&auto=format&fit=crop&q=80';
+  }
+
   adjustStock(product: Product, delta: number) {
     const newStock = Math.max(0, product.stock + delta);
     this.productsService.updateStock(product.id, newStock).subscribe({
@@ -433,46 +521,69 @@ export class ProductsComponent implements OnInit {
     });
   }
 
-  onDragOver(e: DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    this.isDragging.set(true);
-  }
-
-  onDragLeave(e: DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    this.isDragging.set(false);
-  }
-
-  onDrop(e: DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    this.isDragging.set(false);
-    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-      this.handleFile(e.dataTransfer.files[0]);
-    }
-  }
-
-  onFileSelected(e: Event) {
+  onImageSelected(e: Event) {
     const target = e.target as HTMLInputElement;
     if (target.files && target.files.length > 0) {
-      this.handleFile(target.files[0]);
+      const file = target.files[0];
+      this.isUploadingImage.set(true);
+      this.uploadService.uploadImage(file).subscribe({
+        next: (res) => {
+          const isFirst = this.formData.images.length === 0;
+          this.formData.images.push({
+            imageUrl: res.url,
+            isPrimary: isFirst,
+          });
+          this.isUploadingImage.set(false);
+          target.value = '';
+        },
+        error: () => {
+          this.isUploadingImage.set(false);
+          alert('Error al subir la imagen. Verifica el formato (JPG, PNG, WEBP).');
+          target.value = '';
+        },
+      });
     }
   }
 
-  private handleFile(file: File) {
-    this.isUploading.set(true);
-    this.uploadService.uploadImage(file).subscribe({
-      next: (res: any) => {
-        this.formData.imageUrl = res.url;
-        this.isUploading.set(false);
-      },
-      error: () => {
-        this.isUploading.set(false);
-        alert('Error al subir la imagen. Verifica que sea un archivo válido JPG, PNG o WEBP.');
-      },
+  onVideoSelected(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (target.files && target.files.length > 0) {
+      const file = target.files[0];
+      
+      // Validación de peso máximo estricto de 10MB
+      if (file.size > 10 * 1024 * 1024) {
+        alert('⚠️ El archivo de video seleccionado supera el límite máximo permitido de 10MB.');
+        target.value = '';
+        return;
+      }
+
+      this.isUploadingVideo.set(true);
+      this.uploadService.uploadVideo(file).subscribe({
+        next: (res) => {
+          this.formData.videoUrl = res.url;
+          this.isUploadingVideo.set(false);
+          target.value = '';
+        },
+        error: () => {
+          this.isUploadingVideo.set(false);
+          alert('Error al subir el video. Verifica que sea formato MP4, WEBM o MOV de menos de 10MB.');
+          target.value = '';
+        },
+      });
+    }
+  }
+
+  setPrimaryImage(index: number) {
+    this.formData.images.forEach((img, idx) => {
+      img.isPrimary = idx === index;
     });
+  }
+
+  removeImage(index: number) {
+    this.formData.images.splice(index, 1);
+    if (this.formData.images.length > 0 && !this.formData.images.some((img) => img.isPrimary)) {
+      this.formData.images[0].isPrimary = true;
+    }
   }
 
   openCreateModal() {
@@ -485,10 +596,10 @@ export class ProductsComponent implements OnInit {
       costPrice: 0,
       stock: 10,
       minStockAlert: 3,
-      imageUrl: '',
       description: '',
+      videoUrl: '',
+      images: [],
     };
-    this.imageSourceMode.set('upload');
     this.isModalOpen.set(true);
   }
 
@@ -502,10 +613,10 @@ export class ProductsComponent implements OnInit {
       costPrice: product.costPrice || 0,
       stock: product.stock,
       minStockAlert: product.minStockAlert,
-      imageUrl: product.images?.[0]?.imageUrl || '',
       description: product.description,
+      videoUrl: product.videoUrl || '',
+      images: product.images ? product.images.map((img) => ({ imageUrl: img.imageUrl, isPrimary: !!img.isPrimary })) : [],
     };
-    this.imageSourceMode.set(product.images?.[0]?.imageUrl?.startsWith('http://localhost') ? 'upload' : 'url');
     this.isModalOpen.set(true);
   }
 
@@ -519,7 +630,8 @@ export class ProductsComponent implements OnInit {
       stock: Number(this.formData.stock),
       minStockAlert: Number(this.formData.minStockAlert),
       description: this.formData.description,
-      images: this.formData.imageUrl ? [{ imageUrl: this.formData.imageUrl, isPrimary: true }] : [],
+      videoUrl: this.formData.videoUrl || undefined,
+      images: this.formData.images,
     };
 
     if (this.editingProduct()) {

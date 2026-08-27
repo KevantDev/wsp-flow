@@ -536,6 +536,21 @@ mindmap
 - **Descarga Pública de Catálogo en PDF:** Botón de generación inmediata que compila los productos en un documento A4 maquetado estilo Bento.
 - **Grid de Beneficios & Planes de Precios:** Presentación en Bento Grid de las 6 ventajas competitivas (*IA GPT-5.6, Baileys sin costo por mensaje, Catálogo PDF, Tablero Kanban To-Do, Live Chat y Subadmins*) y 3 planes de suscripción (*Starter, Business IA y Enterprise*).
 
+### 7.7. Módulo de Configuración de IA & Empresa (`SettingsComponent`)
+- **Gestión de Contexto Empresarial:**
+  - Nombre del negocio, rubro, política de envíos, métodos de pago aceptados, horarios de atención y dirección física.
+  - **System Prompt Personalizado:** Instrucciones maestras que definen la personalidad, tono de voz (amable, formal, persuasivo) y límites operativos de Luna.
+- **Configuración del Motor de Inteligencia Artificial:**
+  - Modelo activo (`gpt-5.6-luna`), temperatura (creatividad vs precisión), y límite de memoria conversacional (retención de los últimos 15 mensajes del hilo).
+  - Consulta en tiempo real de los productos y sus características completas para respuestas naturales y sin alucinaciones.
+- **Motor Baileys Anti-Ban Protection (Prevención de Bloqueos):**
+  - **Delays Aleatorios Humanizados:** Rango configurable (1500ms - 3500ms) para simular tiempo de lectura y tipeo humano.
+  - **Simulación de Presencia:** Envío de evento `composing` (escribiendo...) antes de despachar cada respuesta.
+  - **Marcado de Lectura Retardado:** Marcado de mensaje como leído con delay natural.
+- **Soporte Multimedia en Productos y Despacho en WhatsApp:**
+  - Carga de hasta **3 imágenes** de alta resolución y **1 video demostrativo** (peso máximo estricto de 10MB).
+  - La IA tiene la capacidad de enviar fotos y videos de productos directamente al cliente por WhatsApp mediante Function Calling cuando el usuario solicita ver el artículo.
+
 ---
 
 ## 8. Diseño UI/UX — Bento Grid & Tailwind CSS (Light Mode)

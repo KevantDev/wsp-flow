@@ -3,25 +3,34 @@ import OpenAI from 'openai';
 import { PrismaProductRepository } from '../persistence/prisma/repositories/prisma-product.repository';
 import { PrismaOrderRepository } from '../persistence/prisma/repositories/prisma-order.repository';
 import { PrismaChatRepository } from '../persistence/prisma/repositories/prisma-chat.repository';
+import { PrismaCompanyConfigRepository } from '../persistence/prisma/repositories/prisma-company-config.repository';
 import { WhatsAppGateway } from '../../presentation/gateways/whatsapp.gateway';
 import { OrderSource, OrderStatus } from '../../domain/entities/order.entity';
+
+export interface AiProcessResult {
+  replyText: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'document';
+  caption?: string;
+}
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private openai: OpenAI | null = null;
-  private readonly modelName = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
+  private readonly defaultModel = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
 
   constructor(
     private readonly productRepo: PrismaProductRepository,
     private readonly orderRepo: PrismaOrderRepository,
     private readonly chatRepo: PrismaChatRepository,
+    private readonly configRepo: PrismaCompanyConfigRepository,
     private readonly wsGateway: WhatsAppGateway,
   ) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey && apiKey.trim().length > 0) {
       this.openai = new OpenAI({ apiKey });
-      this.logger.log(`🤖 OpenAI AI Service inicializado con modelo: ${this.modelName}`);
+      this.logger.log(`🤖 OpenAI AI Service inicializado con modelo: ${this.defaultModel}`);
     } else {
       this.logger.warn(
         '⚠️ OPENAI_API_KEY no configurada. El bot operará en modo híbrido con respuestas automáticas.',
@@ -34,30 +43,71 @@ export class AiService {
   }
 
   /**
-   * Procesa un mensaje de WhatsApp entrante con GPT-5.6-luna y Function Calling
+   * Procesa un mensaje de WhatsApp entrante con GPT-5.6-luna, memoria de conversación y Function Calling
    */
   async processWhatsAppMessage(
     customerPhone: string,
     customerName: string,
     userMessage: string,
-    conversationHistory: { role: 'user' | 'assistant' | 'system'; content: string }[] = [],
-  ): Promise<string> {
+    chatSessionId?: string,
+  ): Promise<AiProcessResult> {
     if (!this.openai) {
-      return this.generateFallbackResponse(userMessage);
+      return { replyText: this.generateFallbackResponse(userMessage) };
     }
 
     try {
-      const systemPrompt = `Eres Luna, la asesora virtual de ventas y atención al cliente de WSP Flow por WhatsApp.
-Tu objetivo es brindar una atención cálida, profesional, rápida y persuasiva para concretar ventas de productos.
+      // 1. Obtener la configuración dinámica de la empresa y la IA
+      const config = await this.configRepo.getConfig();
+      const modelToUse = config.aiModel || this.defaultModel;
+      const temperature = config.aiTemperature ?? 0.7;
+      const historyLimit = config.historyMessageLimit ?? 15;
 
-DIRECTRICES:
-1. Comunícate en español de forma amigable, usando emojis apropiados (🛍️, ✨, 📦, ⚡, 🚀).
-2. Tienes acceso a herramientas (functions) para consultar productos, verificar stock en tiempo real y registrar pedidos.
-3. SIEMPRE utiliza la herramienta 'search_products' cuando el cliente pregunte qué vendes, pida el catálogo, o busque un producto específico.
-4. Cuando el cliente decida comprar, solicita amablemente su nombre y dirección de envío (si aplica), y utiliza la herramienta 'create_order'.
-5. Si el cliente pide hablar con una persona o tiene un reclamo que no puedes resolver, usa la herramienta 'transfer_to_human'.
-6. Presenta los precios con el signo de dólar ($) y destaca los beneficios del producto.
-7. Mantén las respuestas concisas y fáciles de leer en WhatsApp (usa saltos de línea y viñetas).`;
+      // 2. Obtener historial reciente de la conversación para contexto continuo
+      let recentHistory: { role: 'user' | 'assistant'; content: string }[] = [];
+      if (chatSessionId) {
+        const messages = await this.chatRepo.getMessages(chatSessionId, historyLimit);
+        // Tomar los últimos mensajes antes del actual
+        recentHistory = messages
+          .slice(-historyLimit)
+          .map((m) => ({
+            role: m.sender === 'CUSTOMER' ? ('user' as const) : ('assistant' as const),
+            content: m.content,
+          }));
+      }
+
+      // 3. Obtener catálogo rápido de productos activos para contexto base
+      const activeProducts = await this.productRepo.findAll({ onlyAvailable: true });
+      const productsSummary = activeProducts.map((p) => ({
+        sku: p.sku,
+        name: p.name,
+        category: p.categoryName || 'General',
+        price: p.price,
+        stock: p.stock,
+        hasImages: (p.images?.length || 0) > 0,
+        hasVideo: !!p.videoUrl,
+      }));
+
+      // 4. Construir el System Prompt maestro enriquecido con datos reales de la empresa
+      const systemPrompt = `${config.systemPrompt}
+
+DATOS OFICIALES DE LA EMPRESA:
+- Nombre Comercial: ${config.companyName}
+- Rubro y Descripción: ${config.businessDescription}
+- Políticas de Envío: ${config.shippingPolicy}
+- Métodos de Pago Aceptados: ${config.paymentMethods}
+- Horarios de Atención: ${config.workingHours}
+- Ubicación / Dirección: ${config.address}
+
+CATÁLOGO RESUMIDO DISPONIBLE (${productsSummary.length} productos):
+${JSON.stringify(productsSummary, null, 1)}
+
+DIRECTRICES CLAVE:
+1. Responde siempre con naturalidad, empatía y fluidez humana. No suenes robótico ni des respuestas enlatadas.
+2. Si el cliente pregunta qué vendes o detalles de un producto, consulta con 'search_products' o 'check_stock'.
+3. Si el cliente pide fotos, imágenes o video demostrativo de un producto, utiliza la herramienta 'send_product_media' indicando el SKU y tipo ('image' o 'video').
+4. Cuando el cliente decida comprar, confirma los productos, pide su nombre y dirección de envío y ejecuta 'create_order'.
+5. Si el cliente solicita explícitamente ser atendido por una persona o tiene un problema que requiere intervención, usa 'transfer_to_human'.
+6. Comunícate en español con emojis adecuados (🛍️, ✨, 📦, ⚡, 🚀, 💬). Presenta precios con signo de dólar ($) y destaca beneficios.`;
 
       const tools: OpenAI.ChatCompletionTool[] = [
         {
@@ -65,7 +115,7 @@ DIRECTRICES:
           function: {
             name: 'search_products',
             description:
-              'Busca productos en el inventario de la tienda por nombre, SKU, categoría o lista todos los disponibles.',
+              'Busca productos en el catálogo por nombre, SKU, categoría o lista todos los disponibles con sus descripciones completas.',
             parameters: {
               type: 'object',
               properties: {
@@ -85,13 +135,36 @@ DIRECTRICES:
           type: 'function',
           function: {
             name: 'check_stock',
-            description: 'Verifica la disponibilidad exacta de inventario de un producto.',
+            description: 'Verifica la disponibilidad exacta de inventario y precio de un producto por SKU.',
             parameters: {
               type: 'object',
               properties: {
                 sku: {
                   type: 'string',
-                  description: 'Código SKU del producto a consultar (ej: "PROD-01", "AUD-01").',
+                  description: 'Código SKU del producto (ej: "PROD-01", "AUD-01").',
+                },
+              },
+              required: ['sku'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'send_product_media',
+            description:
+              'Envía fotos en alta resolución o video de demostración de un producto al chat de WhatsApp del cliente cuando solicita ver imágenes o videos.',
+            parameters: {
+              type: 'object',
+              properties: {
+                sku: {
+                  type: 'string',
+                  description: 'Código SKU del producto a enviar.',
+                },
+                mediaType: {
+                  type: 'string',
+                  enum: ['image', 'video'],
+                  description: 'Tipo de multimedia solicitado ("image" para foto, "video" para video).',
                 },
               },
               required: ['sku'],
@@ -103,7 +176,7 @@ DIRECTRICES:
           function: {
             name: 'create_order',
             description:
-              'Crea y registra un nuevo pedido de compra en la base de datos PostgreSQL, descuenta el stock y genera el código de orden.',
+              'Crea y registra un nuevo pedido de compra en PostgreSQL, descuenta el stock y notifica al panel To-Do Kanban.',
             parameters: {
               type: 'object',
               properties: {
@@ -143,13 +216,13 @@ DIRECTRICES:
           function: {
             name: 'transfer_to_human',
             description:
-              'Pasa la atención a un asesor o subadministrador humano en el panel Live Chat cuando el cliente lo solicita.',
+              'Transfiere la conversación a un asesor humano y pausa el bot en la bandeja Live Chat.',
             parameters: {
               type: 'object',
               properties: {
                 reason: {
                   type: 'string',
-                  description: 'Motivo de la transferencia al agente humano.',
+                  description: 'Motivo de la transferencia.',
                 },
               },
               required: ['reason'],
@@ -161,7 +234,7 @@ DIRECTRICES:
           function: {
             name: 'get_store_info',
             description:
-              'Devuelve información oficial sobre métodos de pago (Efectivo, Transferencia, Tarjeta), envíos y garantías.',
+              'Devuelve información oficial sobre métodos de pago, envíos, horarios de atención y dirección.',
             parameters: {
               type: 'object',
               properties: {},
@@ -172,27 +245,27 @@ DIRECTRICES:
 
       const messages: OpenAI.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
-        ...conversationHistory.map((h) => ({
-          role: h.role,
-          content: h.content,
-        })),
+        ...recentHistory,
         {
           role: 'user',
           content: `[Cliente WhatsApp: ${customerName} (+${customerPhone})]: ${userMessage}`,
         },
       ];
 
+      let mediaToDispatch: { mediaUrl: string; mediaType: 'image' | 'video'; caption?: string } | undefined;
+
       // Primera llamada al modelo
       let response = await this.openai.chat.completions.create({
-        model: this.modelName,
+        model: modelToUse,
         messages,
         tools,
         tool_choice: 'auto',
+        temperature,
       });
 
       let responseMessage = response.choices[0].message;
 
-      // Loop de ejecución de herramientas (Function Calling)
+      // Loop de ejecución de herramientas
       while (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
         messages.push(responseMessage);
 
@@ -203,7 +276,7 @@ DIRECTRICES:
           const args = JSON.parse(toolCall.function.arguments || '{}');
           let toolResult = '';
 
-          this.logger.log(`🔧 Ejecutando Tool [${functionName}] con argumentos: ${JSON.stringify(args)}`);
+          this.logger.log(`🔧 Tool [${functionName}] ejecutada con args: ${JSON.stringify(args)}`);
 
           switch (functionName) {
             case 'search_products':
@@ -213,6 +286,19 @@ DIRECTRICES:
             case 'check_stock':
               toolResult = await this.executeCheckStock(args.sku);
               break;
+
+            case 'send_product_media': {
+              const mediaResult = await this.executeSendProductMedia(args.sku, args.mediaType || 'image');
+              toolResult = mediaResult.resultJson;
+              if (mediaResult.mediaUrl) {
+                mediaToDispatch = {
+                  mediaUrl: mediaResult.mediaUrl,
+                  mediaType: mediaResult.mediaType,
+                  caption: mediaResult.caption,
+                };
+              }
+              break;
+            }
 
             case 'create_order':
               toolResult = await this.executeCreateOrder(
@@ -229,10 +315,11 @@ DIRECTRICES:
 
             case 'get_store_info':
               toolResult = JSON.stringify({
-                storeName: 'WSP Flow Store',
-                paymentMethods: ['Transferencia Bancaria', 'MercadoPago / Tarjetas', 'Efectivo contra entrega'],
-                shipping: 'Envíos a todo el país en 24-48 hs hábiles.',
-                guarantee: 'Garantía oficial de 6 meses en todos los productos.',
+                companyName: config.companyName,
+                shippingPolicy: config.shippingPolicy,
+                paymentMethods: config.paymentMethods,
+                workingHours: config.workingHours,
+                address: config.address,
               });
               break;
 
@@ -247,19 +334,24 @@ DIRECTRICES:
           });
         }
 
-        // Llamar nuevamente al modelo con el resultado de las herramientas
         response = await this.openai.chat.completions.create({
-          model: this.modelName,
+          model: modelToUse,
           messages,
+          temperature,
         });
 
         responseMessage = response.choices[0].message;
       }
 
-      return responseMessage.content || '¡Hola! ¿En qué puedo ayudarte hoy con nuestro catálogo?';
+      return {
+        replyText: responseMessage.content || '¡Hola! ¿En qué más te puedo asesorar sobre nuestros productos?',
+        mediaUrl: mediaToDispatch?.mediaUrl,
+        mediaType: mediaToDispatch?.mediaType,
+        caption: mediaToDispatch?.caption,
+      };
     } catch (error: any) {
-      this.logger.error(`Error en OpenAI AI Service (${this.modelName}): ${error.message}`);
-      return this.generateFallbackResponse(userMessage);
+      this.logger.error(`Error en OpenAI AI Service: ${error.message}`);
+      return { replyText: this.generateFallbackResponse(userMessage) };
     }
   }
 
@@ -269,7 +361,6 @@ DIRECTRICES:
     try {
       const products = await this.productRepo.findAll({ categoryId, search: query, onlyAvailable: true });
       const simplified = products.map((p) => ({
-        id: p.id,
         sku: p.sku,
         name: p.name,
         price: p.price,
@@ -277,6 +368,8 @@ DIRECTRICES:
         category: p.categoryName || 'General',
         description: p.description,
         available: p.isAvailable && p.stock > 0,
+        imagesCount: p.images?.length || 0,
+        hasVideo: !!p.videoUrl,
       }));
       return JSON.stringify({ count: simplified.length, products: simplified });
     } catch (err: any) {
@@ -297,9 +390,68 @@ DIRECTRICES:
         stock: product.stock,
         inStock: product.stock > 0,
         price: product.price,
+        description: product.description,
       });
     } catch (err: any) {
       return JSON.stringify({ error: err.message });
+    }
+  }
+
+  private async executeSendProductMedia(
+    sku: string,
+    requestedType: 'image' | 'video',
+  ): Promise<{ resultJson: string; mediaUrl?: string; mediaType: 'image' | 'video'; caption?: string }> {
+    try {
+      const product = await this.productRepo.findBySku(sku);
+      if (!product) {
+        return {
+          resultJson: JSON.stringify({ success: false, message: `Producto con SKU ${sku} no encontrado.` }),
+          mediaType: requestedType,
+        };
+      }
+
+      if (requestedType === 'video' && product.videoUrl) {
+        return {
+          resultJson: JSON.stringify({
+            success: true,
+            mediaType: 'video',
+            videoUrl: product.videoUrl,
+            message: `Video de ${product.name} preparado para envío.`,
+          }),
+          mediaUrl: product.videoUrl,
+          mediaType: 'video',
+          caption: `🎥 *Demostración:* ${product.name} (SKU: ${product.sku})`,
+        };
+      }
+
+      // Enviar imagen principal o primera imagen disponible
+      const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
+      if (primaryImage) {
+        return {
+          resultJson: JSON.stringify({
+            success: true,
+            mediaType: 'image',
+            imageUrl: primaryImage.imageUrl,
+            message: `Foto de ${product.name} preparada para envío.`,
+          }),
+          mediaUrl: primaryImage.imageUrl,
+          mediaType: 'image',
+          caption: `📸 *${product.name}* • $${product.price.toFixed(2)} USD (SKU: ${product.sku})`,
+        };
+      }
+
+      return {
+        resultJson: JSON.stringify({
+          success: false,
+          message: `El producto ${product.name} no cuenta con fotos o videos cargados actualmente.`,
+        }),
+        mediaType: requestedType,
+      };
+    } catch (err: any) {
+      return {
+        resultJson: JSON.stringify({ success: false, error: err.message }),
+        mediaType: requestedType,
+      };
     }
   }
 
@@ -350,12 +502,11 @@ DIRECTRICES:
           subtotal,
           deliveryFee: 0,
           total,
-          notes: `Generado automáticamente por Asistente AI Luna (${this.modelName})`,
+          notes: `Generado automáticamente por Asistente AI Luna (${this.defaultModel})`,
         },
         orderItems,
       );
 
-      // Notificar al Dashboard vía WebSocket
       this.wsGateway.emitNewOrder(newOrder);
 
       return JSON.stringify({
@@ -386,11 +537,11 @@ DIRECTRICES:
   private generateFallbackResponse(userMsg: string): string {
     const text = userMsg.toLowerCase();
     if (text.includes('catalogo') || text.includes('productos') || text.includes('precio') || text.includes('hola')) {
-      return '¡Hola! 🛍️ Bienvenido a nuestra tienda. Escribe *catalogo* para ver los productos en promoción o dime qué estás buscando y con gusto te ayudo.';
+      return '¡Hola! 🛍️ Bienvenido a nuestra tienda. Escribe *catalogo* para recibir nuestro catálogo en PDF o dime qué producto estás buscando y con gusto te asesoro.';
     }
-    if (text.includes('asesor') || text.includes('humano')) {
+    if (text.includes('asesor') || text.includes('humano') || text.includes('operador')) {
       return '👨‍💼 He transferido tu consulta a uno de nuestros asesores humanos. En breve te responderán por este mismo chat.';
     }
-    return '¡Hola! 👋 Gracias por comunicarte. Escribe *catalogo* para ver nuestras ofertas o *asesor* para hablar con un representante.';
+    return '¡Hola! 👋 Gracias por comunicarte. Escribe *catalogo* para ver los productos disponibles o *asesor* para hablar con nuestro equipo.';
   }
 }

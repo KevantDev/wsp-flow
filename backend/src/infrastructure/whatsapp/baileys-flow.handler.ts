@@ -12,6 +12,8 @@ import { CatalogPdfService } from '../pdf/catalog-pdf.service';
 export interface FlowResult {
   replyText?: string;
   mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'document';
+  caption?: string;
   documentPath?: string;
   documentFileName?: string;
   actionTaken?: string;
@@ -36,6 +38,7 @@ export class BaileysFlowHandler {
     customerPhone: string,
     customerName: string,
     messageText: string,
+    chatSessionId?: string,
   ): Promise<FlowResult | null> {
     const rawText = messageText.trim();
     const cleanText = rawText.toLowerCase();
@@ -69,9 +72,12 @@ export class BaileysFlowHandler {
     // 2. Si OpenAI con GPT-5.6-luna está configurado y activo, usar IA con Function Calling
     if (this.aiService.isAvailable()) {
       this.logger.log(`🧠 Procesando con OpenAI GPT-5.6-luna y Function Calling...`);
-      const aiReply = await this.aiService.processWhatsAppMessage(customerPhone, customerName, rawText);
+      const aiResult = await this.aiService.processWhatsAppMessage(customerPhone, customerName, rawText, chatSessionId);
       return {
-        replyText: aiReply,
+        replyText: aiResult.replyText,
+        mediaUrl: aiResult.mediaUrl,
+        mediaType: aiResult.mediaType,
+        caption: aiResult.caption,
         actionTaken: 'OPENAI_GPT_LUNA',
       };
     }

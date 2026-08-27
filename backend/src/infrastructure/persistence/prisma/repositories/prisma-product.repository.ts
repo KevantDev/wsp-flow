@@ -19,6 +19,7 @@ export class PrismaProductRepository implements IProductRepository {
       stock: p.stock,
       minStockAlert: p.minStockAlert,
       isAvailable: p.isAvailable,
+      videoUrl: p.videoUrl,
       categoryId: p.categoryId,
       categoryName: p.category?.name,
       images: p.images?.map((img: any) => ({
@@ -93,6 +94,7 @@ export class PrismaProductRepository implements IProductRepository {
         stock: product.stock ?? 0,
         minStockAlert: product.minStockAlert ?? 5,
         isAvailable: product.isAvailable ?? true,
+        videoUrl: product.videoUrl,
         categoryId: product.categoryId!,
         images: images && images.length > 0
           ? {
@@ -134,6 +136,7 @@ export class PrismaProductRepository implements IProductRepository {
         ...(product.stock !== undefined && { stock: product.stock }),
         ...(product.minStockAlert !== undefined && { minStockAlert: product.minStockAlert }),
         ...(product.isAvailable !== undefined && { isAvailable: product.isAvailable }),
+        ...(product.videoUrl !== undefined && { videoUrl: product.videoUrl }),
         ...(product.categoryId && { categoryId: product.categoryId }),
       },
       include: { category: true, images: { orderBy: { orderIndex: 'asc' } } },

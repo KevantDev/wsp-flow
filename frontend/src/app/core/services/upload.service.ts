@@ -23,4 +23,10 @@ export class UploadService {
     formData.append('file', file);
     return this.http.post<UploadResponse>(`${this.apiUrl}/image`, formData);
   }
+
+  uploadVideo(file: File): Observable<UploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<UploadResponse>(`${this.apiUrl}/video`, formData);
+  }
 }
