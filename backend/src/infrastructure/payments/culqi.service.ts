@@ -49,14 +49,13 @@ export class CulqiService {
   async processCardPayment(
     tokenId: string,
     orderNumber: string,
-    amount: number, // en dólares o soles
+    amount: number,
     email: string,
     phone: string,
   ): Promise<CulqiChargeResponse> {
     const amountInCents = Math.round(amount * 100);
     this.logger.log(`💳 Procesando pago con Tarjeta (Token: ${tokenId}) para Orden #${orderNumber} por S/. ${amount}`);
 
-    // Si no hay credenciales reales en desarrollo, simular respuesta exitosa de sandbox
     if (!this.isConfigured()) {
       this.logger.warn(`⚠️ Culqi en modo simulador (Dev Sandbox). Aprobando cargo automático...`);
       return {
@@ -121,7 +120,8 @@ export class CulqiService {
     email: string,
   ): Promise<CulqiChargeResponse> {
     const amountInCents = Math.round(amount * 100);
-    this.logger.log(`📱 Procesando pago con YAPE (Cel: ${yapePhone}, OTP: ${yapeOtp}) para Orden #${orderNumber}`);
+    const cleanPhone = yapePhone.replace(/\D/g, '').slice(-9);
+    this.logger.log(`📱 Procesando pago con YAPE (Cel: ${cleanPhone}, OTP: ${yapeOtp}) para Orden #${orderNumber}`);
 
     if (!this.isConfigured()) {
       this.logger.warn(`⚠️ Culqi en modo simulador Yape (Dev Sandbox). Aprobando pago de Yape...`);
@@ -129,19 +129,19 @@ export class CulqiService {
         success: true,
         chargeId: `chr_yape_test_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
         amount,
-        currency: 'USD',
+        currency: 'PEN',
         paymentMethod: 'YAPE',
         message: 'Pago con Yape validado y aprobado exitosamente en modo desarrollo.',
       };
     }
 
     try {
-      // 1. Crear Token Yape en Culqi
+      // 1. Crear Token Yape en Culqi con el parámetro oficial number_phone
       const tokenResp = await axios.post(
         'https://secure.culqi.com/v2/tokens/yape',
         {
-          otp: yapeOtp,
-          number: yapePhone,
+          otp: yapeOtp.trim(),
+          number_phone: cleanPhone,
           amount: amountInCents,
         },
         {
@@ -159,13 +159,13 @@ export class CulqiService {
         `${this.baseUrl}/charges`,
         {
           amount: amountInCents,
-          currency_code: 'USD',
+          currency_code: 'PEN',
           email: email || 'cliente@wspflow.com',
           source_id: yapeTokenId,
           description: `Pago Yape WSP Flow Orden #${orderNumber}`,
           metadata: {
             orderNumber,
-            yapePhone,
+            yapePhone: cleanPhone,
           },
         },
         {
