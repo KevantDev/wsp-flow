@@ -20,6 +20,11 @@ export class PrismaOrderRepository implements IOrderRepository {
       subtotal: o.subtotal,
       deliveryFee: o.deliveryFee,
       total: o.total,
+      paymentMethod: o.paymentMethod,
+      culqiChargeId: o.culqiChargeId,
+      culqiRefundId: o.culqiRefundId,
+      paidAt: o.paidAt,
+      refundedAt: o.refundedAt,
       notes: o.notes,
       handledById: o.handledById,
       handledByName: o.handledBy?.fullName,
@@ -88,6 +93,10 @@ export class PrismaOrderRepository implements IOrderRepository {
         subtotal: order.subtotal || 0,
         deliveryFee: order.deliveryFee || 0,
         total: order.total || 0,
+        paymentMethod: order.paymentMethod || 'CULQI_PENDING',
+        culqiChargeId: order.culqiChargeId,
+        culqiRefundId: order.culqiRefundId,
+        paidAt: order.paidAt,
         notes: order.notes,
         handledById: order.handledById,
         items: {
@@ -111,6 +120,34 @@ export class PrismaOrderRepository implements IOrderRepository {
       data: {
         status: status as any,
         ...(handledById && { handledById }),
+      },
+      include: { items: true, handledBy: true },
+    });
+    return this.mapToEntity(updated);
+  }
+
+  async updatePayment(
+    id: string,
+    data: {
+      paymentMethod?: string;
+      culqiChargeId?: string;
+      culqiRefundId?: string;
+      status?: OrderStatus;
+      paidAt?: Date;
+      refundedAt?: Date;
+      notes?: string;
+    },
+  ): Promise<OrderEntity> {
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: {
+        ...(data.paymentMethod && { paymentMethod: data.paymentMethod }),
+        ...(data.culqiChargeId && { culqiChargeId: data.culqiChargeId }),
+        ...(data.culqiRefundId && { culqiRefundId: data.culqiRefundId }),
+        ...(data.status && { status: data.status as any }),
+        ...(data.paidAt && { paidAt: data.paidAt }),
+        ...(data.refundedAt && { refundedAt: data.refundedAt }),
+        ...(data.notes && { notes: data.notes }),
       },
       include: { items: true, handledBy: true },
     });

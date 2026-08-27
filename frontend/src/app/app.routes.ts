@@ -20,6 +20,13 @@ export const routes: Routes = [
       import('./features/auth/login/login.component').then((m) => m.LoginComponent),
   },
   {
+    path: 'pay/:orderNumber',
+    loadComponent: () =>
+      import('./features/payment/payment-checkout.component').then(
+        (m) => m.PaymentCheckoutComponent,
+      ),
+  },
+  {
     path: '',
     component: MainLayoutComponent,
     canActivate: [authGuard],

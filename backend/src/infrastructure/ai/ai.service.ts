@@ -496,7 +496,9 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
         await this.productRepo.decrementStock(prod.id, item.quantity);
       }
 
-      const total = subtotal;
+      const deliveryFee = subtotal >= 50 || !customerAddress ? 0 : 3.50;
+      const total = subtotal + deliveryFee;
+
       const newOrder = await this.orderRepo.create(
         {
           customerName,
@@ -505,21 +507,28 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
           status: OrderStatus.PENDING,
           source: OrderSource.WHATSAPP_BOT,
           subtotal,
-          deliveryFee: 0,
+          deliveryFee,
           total,
-          notes: `Generado automáticamente por Asistente AI Luna (${this.defaultModel})`,
+          paymentMethod: 'CULQI_PENDING',
+          notes: `Generado por Asistente AI Luna con link de pago Culqi`,
         },
         orderItems,
       );
+
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+      const paymentUrl = `${baseUrl}/pay/${newOrder.orderNumber}`;
 
       this.wsGateway.emitNewOrder(newOrder);
 
       return JSON.stringify({
         success: true,
         orderNumber: newOrder.orderNumber,
-        total: newOrder.total,
+        subtotal,
+        deliveryFee,
+        total,
+        paymentUrl,
         status: newOrder.status,
-        message: 'Pedido registrado con éxito en PostgreSQL y notificado al panel',
+        message: `Pedido registrado con éxito. IMPORTANTE: Entrega al cliente el resumen con productos, delivery y el enlace de pago ${paymentUrl} para que pague con Yape o Tarjeta de débito/crédito.`,
       });
     } catch (err: any) {
       return JSON.stringify({ success: false, error: err.message });

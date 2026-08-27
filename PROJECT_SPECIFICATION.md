@@ -989,6 +989,30 @@ Las siguientes **Skills de Especialidad UI/UX & Frontend** se encuentran instala
 | **`ui-ux-pro-max`** | `nextlevelbuilder/ui-ux-pro-max-skill` | Patrones avanzados de UI/UX para interfaces complejas, optimización de flujos de usuario y diseño de dashboards de alta densidad. |
 | **`vercel-composition-patterns`** | `vercel-labs/agent-skills` | Arquitectura de componentes escalables, composición declarativa y desacoplamiento de interfaces reactivas. |
 
+---
+
+## 16. Pasarela de Pagos Culqi (Yape, Tarjetas de Débito/Crédito, Webhooks y Reembolsos)
+
+### 16.1. Arquitectura de Pagos End-to-End
+- **Métodos de Cobro Habilitados:**
+  - **Yape (Código de Aprobación OTP):** Cobro directo solicitando el número de celular del cliente y el código de 6 dígitos generado en su App Yape.
+  - **Tarjetas de Crédito y Débito:** Visa, Mastercard, American Express y Diners Club con validación 3DS y tokenización segura.
+  - **PagoEfectivo / Transferencia / Efectivo contra entrega:** Soportados como modalidades alternativas coordinables vía WhatsApp.
+- **Cálculo de Delivery y Totales:**
+  - `Subtotal` (suma de items) + `deliveryFee` ($3.50 para pedidos menores a $50, o $0.00 para pedidos mayores con delivery gratis) = `Total a Pagar`.
+- **Generación de Link de Pago Único:**
+  - Tras registrarse la orden, el asistente de IA o el despachador genera una URL pública segura: `https://tudominio.com/pay/:orderNumber`.
+  - Se despacha una plantilla con botón directo en WhatsApp.
+- **Webhooks & Sincronización en Tiempo Real:**
+  - Endpoint `POST /api/v1/payments/culqi-webhook`.
+  - Al validarse el cobro (`charge.creation.successful`), el backend actualiza la orden de `PENDING` a `CONFIRMED`, mueve automáticamente la tarjeta en el tablero Kanban To-Do vía WebSocket, y envía un mensaje de confirmación por WhatsApp con comprobante.
+- **Motor de Reembolsos (Refunds):**
+  - Botón de reembolso directo en el panel Kanban para administradores (`POST /api/v1/payments/refund/:orderId`).
+  - Llama a la API de Culqi (`POST /v2/refunds`), devuelve el dinero a la tarjeta/Yape del cliente, cancela el pedido, restaura el stock a PostgreSQL y notifica por WhatsApp.
+- **Modo Sandbox / Desarrollo:**
+  - El sistema incluye un simulador de sandbox para desarrollo que permite validar flujos de Yape, Tarjetas y Reembolsos sin necesidad de llaves de producción inmediatas.
+
+
 ### Cómo instalar nuevas Skills en el proyecto:
 ```bash
 npx skills add <url-del-repositorio> --skill <nombre-de-la-skill>

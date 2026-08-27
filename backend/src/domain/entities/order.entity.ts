@@ -34,6 +34,11 @@ export class OrderEntity {
   subtotal: number;
   deliveryFee: number;
   total: number;
+  paymentMethod?: string;
+  culqiChargeId?: string;
+  culqiRefundId?: string;
+  paidAt?: Date;
+  refundedAt?: Date;
   notes?: string;
   handledById?: string;
   handledByName?: string;

@@ -13,11 +13,12 @@ import { PrismaChatRepository } from './infrastructure/persistence/prisma/reposi
 import { PrismaWhatsAppSessionRepository } from './infrastructure/persistence/prisma/repositories/prisma-whatsapp-session.repository';
 import { PrismaCompanyConfigRepository } from './infrastructure/persistence/prisma/repositories/prisma-company-config.repository';
 
-// Infrastructure - WhatsApp Engine
+// Infrastructure - WhatsApp Engine & Payments
 import { BaileysService } from './infrastructure/whatsapp/baileys.service';
 import { BaileysFlowHandler } from './infrastructure/whatsapp/baileys-flow.handler';
 import { AiService } from './infrastructure/ai/ai.service';
 import { CatalogPdfService } from './infrastructure/pdf/catalog-pdf.service';
+import { CulqiService } from './infrastructure/payments/culqi.service';
 
 // Application Services
 import { AuthService } from './application/services/auth.service';
@@ -41,6 +42,7 @@ import { UsersController } from './presentation/controllers/users.controller';
 import { DashboardController } from './presentation/controllers/dashboard.controller';
 import { UploadController } from './presentation/controllers/upload.controller';
 import { CompanyConfigController } from './presentation/controllers/company-config.controller';
+import { PaymentsController } from './presentation/controllers/payments.controller';
 
 // Core Security
 import { JwtStrategy } from './core/strategies/jwt.strategy';
@@ -66,6 +68,7 @@ import { RolesGuard } from './core/guards/roles.guard';
     DashboardController,
     UploadController,
     CompanyConfigController,
+    PaymentsController,
   ],
   providers: [
     // Prisma & Repositories
@@ -82,12 +85,13 @@ import { RolesGuard } from './core/guards/roles.guard';
       useClass: PrismaCompanyConfigRepository,
     },
 
-    // WhatsApp Engine & AI Assistant & PDF Generator
+    // WhatsApp Engine & AI Assistant & PDF Generator & Payments
     BaileysService,
     BaileysFlowHandler,
     WhatsAppGateway,
     AiService,
     CatalogPdfService,
+    CulqiService,
 
     // Services
     AuthService,

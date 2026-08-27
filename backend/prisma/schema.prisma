@@ -175,6 +175,11 @@ model Order {
   subtotal        Float
   deliveryFee     Float        @default(0.0)
   total           Float
+  paymentMethod   String?      @default("CULQI_PENDING")
+  culqiChargeId   String?
+  culqiRefundId   String?
+  paidAt          DateTime?
+  refundedAt      DateTime?
   notes           String?
   handledById     String?
   handledBy       User?        @relation(fields: [handledById], references: [id], onDelete: SetNull)

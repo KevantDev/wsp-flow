@@ -1,11 +1,14 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 import { NavbarComponent } from '../../shared/components/navbar/navbar.component';
 import { BentoCardComponent } from '../../shared/components/bento-card/bento-card.component';
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { OrdersService } from '../../core/services/orders.service';
+import { AuthService } from '../../core/services/auth.service';
 import { Order, OrderStatus } from '../../core/models/models';
+import { environment } from '../../../environments/environment';
 
 interface TodoColumn {
   key: string;
@@ -22,16 +25,16 @@ interface TodoColumn {
   standalone: true,
   imports: [CommonModule, FormsModule, NavbarComponent, BentoCardComponent, BadgeComponent],
   template: `
-    <app-navbar title="Pipeline de Pedidos & Ventas" subtitle="Gestión interactiva estilo To-Do / Tablero de Estado"></app-navbar>
+    <app-navbar title="Pipeline de Pedidos & Ventas" subtitle="Gestión interactiva To-Do, cobros con Culqi y reembolsos"></app-navbar>
 
-    <div class="space-y-6 mt-6">
+    <div class="space-y-6 mt-6 pb-12">
       
       <!-- Top Controls & View Switcher -->
       <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         
         <!-- Summary Stats Pills -->
         <div class="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-          <div class="px-3 py-1.5 rounded-xl bg-white border border-zinc-200 shadow-xs flex items-center gap-2">
+          <div class="px-3 py-1.5 rounded-xl bg-white border border-zinc-200 shadow-sm flex items-center gap-2">
             <span class="text-zinc-500 font-medium">Total Pedidos:</span>
             <span class="font-bold text-zinc-900 font-mono">{{ orders().length }}</span>
           </div>
@@ -56,7 +59,7 @@ interface TodoColumn {
         <div class="flex items-center gap-1 bg-zinc-100/90 p-1 rounded-xl border border-zinc-200 self-start sm:self-auto">
           <button
             (click)="viewMode.set('kanban')"
-            [class]="'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ' + (viewMode() === 'kanban' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-800')"
+            [class]="'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ' + (viewMode() === 'kanban' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-800')"
           >
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
@@ -65,7 +68,7 @@ interface TodoColumn {
           </button>
           <button
             (click)="viewMode.set('list')"
-            [class]="'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ' + (viewMode() === 'list' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-800')"
+            [class]="'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ' + (viewMode() === 'list' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-800')"
           >
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -81,7 +84,7 @@ interface TodoColumn {
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
           
           @for (col of columns; track col.key) {
-            <div class="bg-zinc-50/90 rounded-2xl md:rounded-3xl border border-zinc-200/90 p-4 space-y-4 shadow-xs flex flex-col min-h-[620px]">
+            <div class="bg-zinc-50/90 rounded-2xl md:rounded-3xl border border-zinc-200/90 p-4 space-y-4 shadow-sm flex flex-col min-h-[620px]">
               
               <!-- Column Header -->
               <div class="flex items-center justify-between px-1">
@@ -91,7 +94,7 @@ interface TodoColumn {
                   </div>
                   <h3 class="font-bold text-zinc-900 text-xs sm:text-sm tracking-tight">{{ col.title }}</h3>
                 </div>
-                <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 shadow-xs">
+                <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 shadow-sm">
                   {{ getOrdersByStatuses(col.statuses).length }}
                 </span>
               </div>
@@ -101,21 +104,26 @@ interface TodoColumn {
                 @for (order of getOrdersByStatuses(col.statuses); track order.id) {
                   <div class="bg-white rounded-2xl border border-zinc-200/80 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md hover:border-zinc-300 transition-all duration-200 space-y-3 group hover:-translate-y-0.5">
                     
-                    <!-- Top Line: Order Number & Origin -->
-                    <div class="flex items-center justify-between">
+                    <!-- Top Line: Order Number, Origin & Payment Badge -->
+                    <div class="flex items-center justify-between gap-1 flex-wrap">
                       <span class="font-mono text-[11px] font-bold text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded-lg border border-zinc-200">
                         {{ order.orderNumber }}
                       </span>
                       
-                      @if (order.source === 'WHATSAPP_BOT') {
-                        <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
-                          <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
-                          Bot WSP
+                      <!-- Payment Method Status Tag -->
+                      @if (order.status === 'CONFIRMED' || order.status === 'PROCESSING' || order.status === 'SHIPPED' || order.status === 'DELIVERED') {
+                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/70">
+                          ✓ Pagado Culqi
                         </span>
                       } @else {
-                        <span class="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200/60">
-                          Panel Web
-                        </span>
+                        <a
+                          [href]="'/pay/' + order.orderNumber"
+                          target="_blank"
+                          class="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200/70 transition-colors"
+                          title="Abrir enlace de pago Culqi"
+                        >
+                          💳 Link de Pago ↗
+                        </a>
                       }
                     </div>
 
@@ -136,6 +144,9 @@ interface TodoColumn {
                         </a>
                       </div>
                       <p class="font-mono text-zinc-500 text-[10px]">+{{ order.customerPhone }}</p>
+                      @if (order.customerAddress) {
+                        <p class="text-zinc-500 text-[10px] truncate mt-0.5">📍 {{ order.customerAddress }}</p>
+                      }
                     </div>
 
                     <!-- Items Checklist -->
@@ -149,35 +160,48 @@ interface TodoColumn {
                       }
                     </div>
 
-                    <!-- Total -->
-                    <div class="pt-2 border-t border-zinc-100 flex items-center justify-between">
-                      <span class="text-zinc-500 font-mono text-[10px] uppercase font-semibold">Total a Cobrar</span>
+                    <!-- Total & Delivery -->
+                    <div class="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
+                      <span class="text-zinc-500 font-mono text-[10px] uppercase font-semibold">
+                        Total (+ Delivery)
+                      </span>
                       <span class="text-sm font-extrabold text-zinc-900 font-mono">&#36;{{ order.total | number: '1.2-2' }}</span>
                     </div>
 
                     <!-- Next Step Action Button (To-Do Flow) -->
-                    @if (col.nextStatus) {
-                      <div class="pt-2 border-t border-zinc-100">
+                    <div class="pt-2 border-t border-zinc-100 space-y-1.5">
+                      @if (col.nextStatus) {
                         <button
                           (click)="onStatusChange(order, col.nextStatus!)"
-                          class="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 hover:text-indigo-800 text-xs font-bold border border-indigo-200/80 transition-all flex items-center justify-center gap-1.5 shadow-sm group-hover:border-indigo-300"
+                          class="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 hover:text-indigo-800 text-xs font-bold border border-indigo-200/80 transition-all flex items-center justify-center gap-1.5 shadow-sm group-hover:border-indigo-300 active:scale-[0.98]"
                         >
                           <span>{{ col.nextActionText }}</span>
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                           </svg>
                         </button>
-                      </div>
-                    } @else if (order.status === 'DELIVERED') {
-                      <div class="pt-2 border-t border-zinc-100 text-center">
-                        <span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/70 inline-flex items-center gap-1">
-                          <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span>Pedido Completado</span>
-                        </span>
-                      </div>
-                    }
+                      } @else if (order.status === 'DELIVERED') {
+                        <div class="text-center py-1">
+                          <span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/70 inline-flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>Pedido Completado</span>
+                          </span>
+                        </div>
+                      }
+
+                      <!-- Admin Culqi Refund Option -->
+                      @if (authService.isAdmin() && order.status !== 'CANCELLED' && (order.status === 'CONFIRMED' || order.status === 'PROCESSING' || order.status === 'SHIPPED')) {
+                        <button
+                          (click)="refundOrder(order)"
+                          class="w-full py-1.5 px-2 rounded-xl text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 text-[10px] font-bold transition-all flex items-center justify-center gap-1"
+                          title="Emitir reembolso vía Culqi y reincorporar stock"
+                        >
+                          <span>💸 Reembolsar con Culqi</span>
+                        </button>
+                      }
+                    </div>
 
                   </div>
                 } @empty {
@@ -206,8 +230,8 @@ interface TodoColumn {
                   <th class="py-3 px-4">Teléfono</th>
                   <th class="py-3 px-4">Origen</th>
                   <th class="py-3 px-4">Total</th>
-                  <th class="py-3 px-4">Estado Actual</th>
-                  <th class="py-3 px-4 rounded-r-xl">Cambiar Estado</th>
+                  <th class="py-3 px-4">Estado</th>
+                  <th class="py-3 px-4 rounded-r-xl">Acciones</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-zinc-100">
@@ -235,18 +259,29 @@ interface TodoColumn {
                     <td class="py-3 px-4">
                       <app-badge [variant]="getBadgeVariant(order.status)">{{ order.status }}</app-badge>
                     </td>
-                    <td class="py-3 px-4">
+                    <td class="py-3 px-4 flex items-center gap-2">
                       <select
                         [ngModel]="order.status"
                         (ngModelChange)="onStatusChange(order, $event)"
                         class="input-bento py-1 text-xs font-semibold"
                       >
                         <option value="PENDING">⏳ Pendiente</option>
+                        <option value="CONFIRMED">✓ Confirmado (Pagado)</option>
                         <option value="PROCESSING">📦 En Preparación</option>
                         <option value="SHIPPED">🚚 Enviado</option>
                         <option value="DELIVERED">🎉 Entregado</option>
                         <option value="CANCELLED">❌ Cancelado</option>
                       </select>
+
+                      @if (authService.isAdmin() && order.status !== 'CANCELLED') {
+                        <button
+                          (click)="refundOrder(order)"
+                          class="btn-danger p-1.5 text-xs whitespace-nowrap"
+                          title="Reembolsar con Culqi"
+                        >
+                          💸 Reembolso
+                        </button>
+                      }
                     </td>
                   </tr>
                 }
@@ -261,6 +296,8 @@ interface TodoColumn {
 })
 export class OrdersComponent implements OnInit {
   private ordersService = inject(OrdersService);
+  private http = inject(HttpClient);
+  authService = inject(AuthService);
 
   orders = signal<Order[]>([]);
   viewMode = signal<'kanban' | 'list'>('kanban');
@@ -268,11 +305,11 @@ export class OrdersComponent implements OnInit {
   columns: TodoColumn[] = [
     {
       key: 'pending',
-      title: 'Por Atender',
+      title: 'Por Atender (Pendientes)',
       statuses: [OrderStatus.PENDING],
       headerBg: 'bg-amber-100 text-amber-800',
       badgeVariant: 'warning',
-      nextActionText: 'Iniciar Preparación',
+      nextActionText: 'Confirmar / Preparar',
       nextStatus: OrderStatus.PROCESSING,
     },
     {
@@ -286,7 +323,7 @@ export class OrdersComponent implements OnInit {
     },
     {
       key: 'shipped',
-      title: 'En Camino',
+      title: 'En Camino (Delivery)',
       statuses: [OrderStatus.SHIPPED],
       headerBg: 'bg-purple-100 text-purple-800',
       badgeVariant: 'purple',
@@ -325,6 +362,27 @@ export class OrdersComponent implements OnInit {
         this.loadOrders();
       },
     });
+  }
+
+  refundOrder(order: Order) {
+    const reason = prompt(
+      `¿Deseas procesar el reembolso en Culqi para la orden #${order.orderNumber} por $${order.total.toFixed(2)} USD?\n\nIngresa el motivo del reembolso:`,
+      'Cancelación solicitada por el cliente',
+    );
+
+    if (reason !== null) {
+      this.http
+        .post<any>(`${environment.apiUrl}/payments/refund/${order.id}`, { reason })
+        .subscribe({
+          next: (res) => {
+            alert(`✅ Reembolso procesado con éxito en Culqi.\nID de Reembolso: ${res.refund?.refundId || 'N/A'}`);
+            this.loadOrders();
+          },
+          error: (err) => {
+            alert(err.error?.message || 'Error al procesar reembolso en Culqi.');
+          },
+        });
+    }
   }
 
   cleanPhone(phone: string): string {

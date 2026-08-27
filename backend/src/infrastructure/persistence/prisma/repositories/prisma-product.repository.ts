@@ -165,6 +165,18 @@ export class PrismaProductRepository implements IProductRepository {
     return this.mapToEntity(updated);
   }
 
+  async incrementStock(id: string, quantity: number): Promise<ProductEntity> {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) throw new Error('Producto no encontrado');
+    const newStock = product.stock + quantity;
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: { stock: newStock },
+      include: { category: true, images: true },
+    });
+    return this.mapToEntity(updated);
+  }
+
   async delete(id: string): Promise<boolean> {
     await this.prisma.product.delete({ where: { id } });
     return true;
