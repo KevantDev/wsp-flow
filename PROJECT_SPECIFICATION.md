@@ -955,6 +955,7 @@ Las siguientes **Skills de Especialidad UI/UX & Frontend** se encuentran instala
 
 | Skill | Repositorio / Origen | Propósito y Capacidades |
 | :--- | :--- | :--- |
+| **`design-taste-frontend`** | `Leonxlnx/taste-skill` | Directrices anti-slop frontend, control de dials visuales (`DESIGN_VARIANCE: 7`, `MOTION_INTENSITY: 6`, `VISUAL_DENSITY: 4`), eliminación de clichés de IA, consistencia de radio de curvatura y contrastes WCAG AA estrictos. |
 | **`frontend-design`** | `anthropics/skills` | Diseño frontend de grado de producción con personalidad distintiva, tipografía intencional, esquemas de color no genéricos y microinteracciones refinadas. |
 | **`ui-ux-pro-max`** | `nextlevelbuilder/ui-ux-pro-max-skill` | Patrones avanzados de UI/UX para interfaces complejas, optimización de flujos de usuario y diseño de dashboards de alta densidad. |
 | **`vercel-composition-patterns`** | `vercel-labs/agent-skills` | Arquitectura de componentes escalables, composición declarativa y desacoplamiento de interfaces reactivas. |

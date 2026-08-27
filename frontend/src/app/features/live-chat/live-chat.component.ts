@@ -41,10 +41,10 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
           @for (session of filteredSessions(); track session.id) {
             <button
               (click)="selectSession(session)"
-              [class]="'w-full p-3.5 sm:p-4 text-left flex items-start gap-3 transition-all hover:bg-zinc-100/70 ' + (activeSession()?.id === session.id ? 'bg-indigo-50/90 border-l-4 border-indigo-600 shadow-2xs' : '')"
+              [class]="'w-full p-3.5 sm:p-4 text-left flex items-start gap-3 transition-all hover:bg-zinc-100/70 ' + (activeSession()?.id === session.id ? 'bg-indigo-50/90 border-l-4 border-indigo-600 shadow-sm' : '')"
             >
               <!-- Avatar -->
-              <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-100 to-indigo-50 border border-indigo-200/80 flex items-center justify-center font-bold text-indigo-700 text-xs shrink-0 shadow-2xs">
+              <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-100 to-indigo-50 border border-indigo-200/80 flex items-center justify-center font-bold text-indigo-700 text-xs shrink-0 shadow-sm">
                 {{ (session.customerName || session.customerPhone).substring(0, 2).toUpperCase() }}
               </div>
 
@@ -110,7 +110,7 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
                 </svg>
               </button>
 
-              <div class="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs sm:text-sm border border-indigo-200/70 shadow-2xs">
+              <div class="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs sm:text-sm border border-indigo-200/70 shadow-sm">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
@@ -127,13 +127,13 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
             <div class="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl border border-zinc-200 scale-90 sm:scale-100 origin-right">
               <button
                 (click)="setBotActive(true)"
-                [class]="'px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all ' + (activeSession()?.isBotActive ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500 hover:text-zinc-800')"
+                [class]="'px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all ' + (activeSession()?.isBotActive ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-800')"
               >
                 🤖 Bot Activo
               </button>
               <button
                 (click)="setBotActive(false)"
-                [class]="'px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all ' + (!activeSession()?.isBotActive ? 'bg-emerald-600 text-white shadow-2xs' : 'text-zinc-500 hover:text-zinc-800')"
+                [class]="'px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all ' + (!activeSession()?.isBotActive ? 'bg-emerald-600 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-800')"
               >
                 👤 Agente
               </button>
@@ -145,7 +145,7 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
             @for (msg of messages(); track msg.id) {
               <div [class]="'flex ' + (msg.sender === 'CUSTOMER' ? 'justify-start' : 'justify-end')">
                 
-                <div [class]="'max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 sm:p-3.5 shadow-2xs ' + getMessageBubbleClass(msg.sender)">
+                <div [class]="'max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 sm:p-3.5 shadow-sm ' + getMessageBubbleClass(msg.sender)">
                   <!-- Sender Header -->
                   <div class="flex items-center justify-between gap-3 mb-1 text-[10px] font-bold opacity-80">
                     <span class="flex items-center gap-1">

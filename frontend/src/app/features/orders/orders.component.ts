@@ -160,7 +160,7 @@ interface TodoColumn {
                       <div class="pt-2 border-t border-zinc-100">
                         <button
                           (click)="onStatusChange(order, col.nextStatus!)"
-                          class="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 hover:text-indigo-800 text-xs font-bold border border-indigo-200/80 transition-all flex items-center justify-center gap-1.5 shadow-2xs group-hover:border-indigo-300"
+                          class="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 hover:text-indigo-800 text-xs font-bold border border-indigo-200/80 transition-all flex items-center justify-center gap-1.5 shadow-sm group-hover:border-indigo-300"
                         >
                           <span>{{ col.nextActionText }}</span>
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

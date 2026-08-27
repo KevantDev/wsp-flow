@@ -41,7 +41,7 @@ import { User } from '../../core/models/models';
                   <img
                     [src]="user.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80'"
                     [alt]="user.fullName"
-                    class="w-11 h-11 rounded-2xl object-cover border border-zinc-200 shadow-2xs"
+                    class="w-11 h-11 rounded-2xl object-cover border border-zinc-200 shadow-sm"
                   />
                   <div>
                     <h4 class="font-bold text-zinc-900 text-sm leading-tight">{{ user.fullName }}</h4>
