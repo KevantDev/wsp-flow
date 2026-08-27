@@ -1,5 +1,5 @@
 export const environment = {
   production: true,
-  apiUrl: '/api/v1',
-  wsUrl: '/ws',
+  apiUrl: 'https://wsp-flow.onrender.com/api/v1',
+  wsUrl: 'https://wsp-flow.onrender.com',
 };

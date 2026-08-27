@@ -32,6 +32,7 @@ import { CompanyConfigService } from './application/services/company-config.serv
 
 // Presentation - Gateways & Controllers
 import { WhatsAppGateway } from './presentation/gateways/whatsapp.gateway';
+import { AppController } from './app.controller';
 import { AuthController } from './presentation/controllers/auth.controller';
 import { ProductsController } from './presentation/controllers/products.controller';
 import { CategoriesController } from './presentation/controllers/categories.controller';
@@ -58,6 +59,7 @@ import { RolesGuard } from './core/guards/roles.guard';
     }),
   ],
   controllers: [
+    AppController,
     AuthController,
     ProductsController,
     CategoriesController,
