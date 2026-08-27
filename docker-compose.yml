@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # Base de Datos Relacional PostgreSQL 16
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: wsp_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: wsp_system_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wsp_network
+
+  # Backend NestJS (Clean Architecture + Baileys WhatsApp Engine)
+  backend_api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wsp_backend
+    restart: always
+    depends_on:
+      - postgres_db
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api/v1
+      DATABASE_URL: "postgresql://postgres:postgrespassword@postgres_db:5432/wsp_system_db?schema=public"
+      JWT_ACCESS_SECRET: "wsp_flow_super_secret_jwt_access_key_2026_x99"
+      JWT_ACCESS_EXPIRATION: "1d"
+      JWT_REFRESH_SECRET: "wsp_flow_super_secret_jwt_refresh_key_2026_x99"
+      JWT_REFRESH_EXPIRATION: "7d"
+      BAILEY_SESSION_DIR: "./auth_info_baileys"
+      BAILEY_AUTO_RECONNECT: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - baileys_auth_data:/app/auth_info_baileys
+    networks:
+      - wsp_network
+
+  # Frontend Angular 18+ (Bento UI + Tailwind CSS + Nginx Proxy)
+  frontend_app:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: wsp_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend_api
+    networks:
+      - wsp_network
+
+volumes:
+  postgres_data:
+    driver: local
+  baileys_auth_data:
+    driver: local
+
+networks:
+  wsp_network:
+    driver: bridge

@@ -1,0 +1,39 @@
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import { OrdersService } from '../../application/services/orders.service';
+import { CreateOrderDto, UpdateOrderStatusDto } from '../../application/dtos/order.dto';
+import { CurrentUser } from '../../core/decorators/current-user.decorator';
+import { OrderStatus } from '../../domain/entities/order.entity';
+
+@Controller('orders')
+export class OrdersController {
+  constructor(private readonly ordersService: OrdersService) {}
+
+  @Get()
+  async getAll(@Query('status') status?: OrderStatus, @Query('customerPhone') customerPhone?: string) {
+    return this.ordersService.getAll(status, customerPhone);
+  }
+
+  @Get('metrics')
+  async getMetrics() {
+    return this.ordersService.getMetrics();
+  }
+
+  @Get(':id')
+  async getById(@Param('id') id: string) {
+    return this.ordersService.getById(id);
+  }
+
+  @Post()
+  async create(@Body() dto: CreateOrderDto, @CurrentUser('id') userId: string) {
+    return this.ordersService.create(dto, userId);
+  }
+
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderStatusDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.ordersService.updateStatus(id, dto, userId);
+  }
+}

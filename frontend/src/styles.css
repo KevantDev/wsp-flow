@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#F8F9FA] text-zinc-900 font-sans antialiased;
+    background-image: radial-gradient(rgba(24, 24, 27, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+  }
+
+  /* Accessible Text contrast WCAG AA */
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-zinc-900 tracking-tight font-bold;
+  }
+
+  /* Focus visible accessibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-indigo-500/50 ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  /* Estilo base de Tarjeta Bento (Light Mode Ultra-Crisp) */
+  .bento-card {
+    @apply relative overflow-hidden rounded-2xl md:rounded-3xl bg-white border border-zinc-200/80 p-5 md:p-6 transition-all duration-200 ease-out;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 4px 16px rgba(0, 0, 0, 0.04);
+  }
+
+  .bento-card:hover {
+    @apply border-zinc-300;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .bento-card-interactive {
+    @apply bento-card cursor-pointer hover:border-indigo-300/80 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(99,102,241,0.08)];
+  }
+
+  /* Botones Bento Modernos con Iconos SVG y feedback de pulsación */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium text-sm shadow-[0_1px_2px_rgba(79,70,229,0.2)] hover:shadow-[0_4px_12px_rgba(79,70,229,0.3)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-zinc-50 active:bg-zinc-100 border border-zinc-200 text-zinc-700 hover:text-zinc-900 font-medium text-sm shadow-sm hover:shadow hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 disabled:opacity-50;
+  }
+
+  .btn-whatsapp {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-medium text-sm shadow-[0_1px_2px_rgba(5,150,105,0.2)] hover:shadow-[0_4px_12px_rgba(5,150,105,0.3)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] transition-all duration-150 disabled:opacity-50;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 border border-rose-200 text-xs font-semibold hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 active:bg-zinc-200/80 text-xs font-medium transition-all duration-150;
+  }
+
+  /* Inputs Bento */
+  .input-bento {
+    @apply w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-200 text-zinc-900 placeholder-zinc-400 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-150;
+  }
+
+  /* Atajos de teclado <kbd> */
+  .kbd-badge {
+    @apply inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-zinc-100 border border-zinc-200 text-zinc-500 shadow-sm select-none;
+  }
+
+  /* Efecto Glassmorphism sutil para modales y dropdowns */
+  .glass-panel {
+    @apply bg-white/95 backdrop-blur-md border border-zinc-200/80 shadow-[0_16px_48px_rgba(0,0,0,0.08)];
+  }
+
+  /* Scrollbar minimalista Light Mode */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #F4F4F5;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D4D4D8;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #A1A1AA;
+  }
+}
