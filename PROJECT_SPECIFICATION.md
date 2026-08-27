@@ -1019,3 +1019,46 @@ npx skills add <url-del-repositorio> --skill <nombre-de-la-skill>
 ```
 Antigravity detecta automáticamente la instalación y ubica los archivos `SKILL.md` en `.agents/skills/<skill_name>/` para su carga progresiva.
 
+---
+
+## 17. Guía de Despliegue 100% Gratuito en la Nube (Supabase + Render + Vercel)
+
+### 17.1. Paso 1: Base de Datos PostgreSQL en Supabase (Gratis)
+1. Crea un proyecto en [https://supabase.com](https://supabase.com).
+2. Ve a **Project Settings ➔ Database** y copia el connection string en modo URI:
+   `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true` o Direct `5432`.
+3. Para inicializar las tablas en Supabase, ejecuta en local:
+   ```bash
+   DATABASE_URL="tu_url_de_supabase" npx prisma db push
+   DATABASE_URL="tu_url_de_supabase" npm run prisma:seed
+   ```
+
+### 17.2. Paso 2: Backend NestJS en Render.com (Gratis)
+1. En [https://render.com](https://render.com), crea un nuevo **Web Service** conectado a tu repositorio GitHub `https://github.com/KevantDev/wsp-flow.git`.
+2. Configura los parámetros:
+   - **Root Directory:** `backend`
+   - **Build Command:** `npm install && npx prisma generate && npm run build`
+   - **Start Command:** `npx prisma db push && npm run start:prod`
+3. Agrega las Variables de Entorno en Render:
+   - `DATABASE_URL`: Tu connection string de Supabase.
+   - `JWT_ACCESS_SECRET`: Clave aleatoria de 32+ caracteres.
+   - `JWT_REFRESH_SECRET`: Clave aleatoria de 32+ caracteres.
+   - `OPENAI_API_KEY`: Tu API Key de OpenAI.
+   - `OPENAI_MODEL`: `gpt-5.6-luna` (o `gpt-4o-mini`).
+   - `CULQI_PUBLIC_KEY`: `pk_test_...` / `pk_live_...`.
+   - `CULQI_SECRET_KEY`: `sk_test_...` / `sk_live_...`.
+   - `FRONTEND_URL`: URL de tu frontend en Vercel (ej: `https://wsp-flow.vercel.app`).
+   - `CORS_ORIGIN`: `*`.
+4. Render generará tu URL backend (ej: `https://wsp-flow-backend.onrender.com`).
+
+### 17.3. Paso 3: Frontend Angular en Vercel (Gratis)
+1. En [https://vercel.com](https://vercel.com), haz clic en **Add New ➔ Project** e importa `https://github.com/KevantDev/wsp-flow.git`.
+2. Configura:
+   - **Root Directory:** `frontend`
+   - **Framework Preset:** `Angular`
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist/wsp-frontend/browser`
+3. Vercel desplegará tu aplicación con dominio HTTPS gratis (`https://wsp-flow.vercel.app`).
+4. **Esta es la URL que introduces en Culqi** como la URL oficial de tu comercio.
+
+
