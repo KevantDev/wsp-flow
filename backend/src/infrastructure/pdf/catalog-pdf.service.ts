@@ -181,7 +181,7 @@ export class CatalogPdfService {
             .fontSize(13)
             .fillColor('#4F46E5')
             .font('Helvetica-Bold')
-            .text(`$${product.price.toFixed(2)} USD`, cardX + 10, cardY + 122);
+            .text(`S/ ${product.price.toFixed(2)}`, cardX + 10, cardY + 122);
 
           // Stock Badge
           const stockText = product.stock > 5 ? `Stock: ${product.stock} un.` : `¡Últimas ${product.stock} un.!`;

@@ -248,6 +248,13 @@ model CompanyConfig {
   antiBanDelayMinMs   Int      @default(1500)
   antiBanDelayMaxMs   Int      @default(3500)
   historyMessageLimit Int      @default(15)
+  pickupStoreAddress  String   @default("Av. Larco 743, Miraflores, Lima")
+  pickupStoreHours    String   @default("Lunes a Sábados de 09:00 a 20:00")
+  deliveryZone1Price  Float    @default(10.0)
+  deliveryZone2Price  Float    @default(15.0)
+  deliveryZone3Price  Float    @default(20.0)
+  deliveryProvincePrice Float  @default(15.0)
+  freeShippingThreshold Float? @default(0.0)
   updatedAt           DateTime @updatedAt
   createdAt           DateTime @default(now())
 

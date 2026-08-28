@@ -15,6 +15,11 @@ export interface IChatRepository {
     whatsappMsgId?: string;
   }): Promise<ChatMessageEntity>;
   getMessages(chatSessionId: string, limit?: number): Promise<ChatMessageEntity[]>;
+  getMessagesPaginated(
+    chatSessionId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<{ messages: ChatMessageEntity[]; hasMore: boolean; total: number }>;
   markMessagesAsRead(chatSessionId: string): Promise<void>;
 }
 

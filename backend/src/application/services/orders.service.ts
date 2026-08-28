@@ -82,6 +82,18 @@ export class OrdersService {
 
   async updateStatus(id: string, dto: UpdateOrderStatusDto, handledById?: string) {
     const existing = await this.getById(id);
+
+    // Si la orden se cancela, reponer el stock automáticamente
+    if (dto.status === OrderStatus.CANCELLED && existing.status !== OrderStatus.CANCELLED) {
+      if (existing.items && existing.items.length > 0) {
+        for (const item of existing.items) {
+          if (item.productId) {
+            await this.productRepo.incrementStock(item.productId, item.quantity);
+          }
+        }
+      }
+    }
+
     const updated = await this.orderRepo.updateStatus(id, dto.status, handledById);
 
     this.wsGateway.emitOrderStatusUpdate(updated);
@@ -115,6 +127,97 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  async createPublicCheckoutOrder(dto: {
+    customerName: string;
+    customerPhone: string;
+    customerAddress?: string;
+    deliveryType?: 'PICKUP' | 'HOME_DELIVERY' | 'PROVINCE_AGENCY';
+    district?: string;
+    items: { productId: string; quantity: number }[];
+    notes?: string;
+  }) {
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('El carrito de compras no contiene productos');
+    }
+
+    const orderItemsData: { productId: string; productName: string; unitPrice: number; quantity: number; subtotal: number }[] = [];
+    let subtotal = 0;
+
+    for (const itemDto of dto.items) {
+      const product = await this.productRepo.findById(itemDto.productId);
+      if (!product) {
+        throw new NotFoundException(`Producto con ID ${itemDto.productId} no encontrado`);
+      }
+      if (product.stock < itemDto.quantity) {
+        throw new BadRequestException(`Stock insuficiente para "${product.name}". Disponible: ${product.stock}`);
+      }
+
+      const itemSubtotal = product.price * itemDto.quantity;
+      subtotal += itemSubtotal;
+
+      orderItemsData.push({
+        productId: product.id,
+        productName: product.name,
+        unitPrice: product.price,
+        quantity: itemDto.quantity,
+        subtotal: itemSubtotal,
+      });
+
+      // Descontar inventario
+      await this.productRepo.decrementStock(product.id, itemDto.quantity);
+    }
+
+    let deliveryFee = 0;
+    let targetAddress = dto.customerAddress || 'Por coordinar';
+
+    if (dto.deliveryType === 'PICKUP') {
+      deliveryFee = 0.0;
+      targetAddress = 'Recojo en Tienda (Av. Larco 743, Miraflores, Lima)';
+    } else if (dto.deliveryType === 'PROVINCE_AGENCY') {
+      deliveryFee = 15.0;
+      targetAddress = dto.customerAddress ? `Provincia: ${dto.customerAddress}` : 'Envío a Provincia por Agencia';
+    } else {
+      // Home delivery Lima
+      deliveryFee = 10.0;
+      if (dto.district) {
+        targetAddress = `${dto.customerAddress ? dto.customerAddress + ', ' : ''}${dto.district}`;
+      }
+    }
+
+    const total = subtotal + deliveryFee;
+
+    const order = await this.orderRepo.create(
+      {
+        customerName: dto.customerName || 'Cliente Web Carrito',
+        customerPhone: dto.customerPhone.replace(/\D/g, '') || '51900000000',
+        customerAddress: targetAddress,
+        status: OrderStatus.PENDING,
+        source: OrderSource.WHATSAPP_BOT,
+        subtotal,
+        deliveryFee,
+        total,
+        paymentMethod: 'CULQI_PENDING',
+        notes: `Generado desde Carrito Web ${dto.notes ? '| ' + dto.notes : ''}`,
+      },
+      orderItemsData,
+    );
+
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    const paymentUrl = `${baseUrl}/pay/${order.orderNumber}`;
+
+    this.wsGateway.emitNewOrder(order);
+
+    return {
+      success: true,
+      orderNumber: order.orderNumber,
+      subtotal,
+      deliveryFee,
+      total,
+      paymentUrl,
+      order,
+    };
   }
 
   async getMetrics() {

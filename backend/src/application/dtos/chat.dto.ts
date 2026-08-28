@@ -22,3 +22,13 @@ export class ToggleBotDto {
   @IsBoolean()
   isBotActive: boolean;
 }
+
+export class CreateChatSessionDto {
+  @IsString()
+  @IsNotEmpty({ message: 'El teléfono es obligatorio' })
+  customerPhone: string;
+
+  @IsString()
+  @IsOptional()
+  customerName?: string;
+}

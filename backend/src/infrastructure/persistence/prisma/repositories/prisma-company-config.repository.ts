@@ -22,6 +22,13 @@ export class PrismaCompanyConfigRepository implements ICompanyConfigRepository {
       antiBanDelayMinMs: c.antiBanDelayMinMs,
       antiBanDelayMaxMs: c.antiBanDelayMaxMs,
       historyMessageLimit: c.historyMessageLimit,
+      pickupStoreAddress: c.pickupStoreAddress || 'Av. Larco 743, Miraflores, Lima',
+      pickupStoreHours: c.pickupStoreHours || 'Lunes a Sábados de 09:00 a 20:00',
+      deliveryZone1Price: c.deliveryZone1Price ?? 10.0,
+      deliveryZone2Price: c.deliveryZone2Price ?? 15.0,
+      deliveryZone3Price: c.deliveryZone3Price ?? 20.0,
+      deliveryProvincePrice: c.deliveryProvincePrice ?? 15.0,
+      freeShippingThreshold: c.freeShippingThreshold ?? 0.0,
       updatedAt: c.updatedAt,
       createdAt: c.createdAt,
     });

@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
-import { SendManualMessageDto, ToggleBotDto } from '../../application/dtos/chat.dto';
+import { SendManualMessageDto, ToggleBotDto, CreateChatSessionDto } from '../../application/dtos/chat.dto';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
 
 @Controller('chat')
@@ -12,9 +12,18 @@ export class ChatController {
     return this.chatService.getAllSessions();
   }
 
+  @Post('sessions')
+  async createSession(@Body() dto: CreateChatSessionDto) {
+    return this.chatService.createOrGetSession(dto);
+  }
+
   @Get('sessions/:id/messages')
-  async getSessionMessages(@Param('id') id: string) {
-    return this.chatService.getSessionMessages(id);
+  async getSessionMessages(
+    @Param('id') id: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.chatService.getSessionMessages(id, limit, offset);
   }
 
   @Post('toggle-bot')

@@ -29,6 +29,7 @@ import { ChatService } from './application/services/chat.service';
 import { UsersService } from './application/services/users.service';
 import { DashboardService } from './application/services/dashboard.service';
 import { CompanyConfigService } from './application/services/company-config.service';
+import { DeliveryService } from './application/services/delivery.service';
 
 // Presentation - Gateways & Controllers
 import { WhatsAppGateway } from './presentation/gateways/whatsapp.gateway';
@@ -104,6 +105,7 @@ import { RolesGuard } from './core/guards/roles.guard';
     UsersService,
     DashboardService,
     CompanyConfigService,
+    DeliveryService,
 
     // Security & Guards
     JwtStrategy,

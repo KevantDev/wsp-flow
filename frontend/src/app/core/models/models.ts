@@ -67,6 +67,13 @@ export interface CompanyConfig {
   antiBanDelayMinMs: number;
   antiBanDelayMaxMs: number;
   historyMessageLimit: number;
+  pickupStoreAddress?: string;
+  pickupStoreHours?: string;
+  deliveryZone1Price?: number;
+  deliveryZone2Price?: number;
+  deliveryZone3Price?: number;
+  deliveryProvincePrice?: number;
+  freeShippingThreshold?: number;
   createdAt?: string;
   updatedAt?: string;
 }

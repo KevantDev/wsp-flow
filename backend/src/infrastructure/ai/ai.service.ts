@@ -6,6 +6,7 @@ import { PrismaChatRepository } from '../persistence/prisma/repositories/prisma-
 import { PrismaCompanyConfigRepository } from '../persistence/prisma/repositories/prisma-company-config.repository';
 import { WhatsAppGateway } from '../../presentation/gateways/whatsapp.gateway';
 import { OrderSource, OrderStatus } from '../../domain/entities/order.entity';
+import { DeliveryService } from '../../application/services/delivery.service';
 
 export interface AiProcessResult {
   replyText: string;
@@ -26,6 +27,7 @@ export class AiService {
     private readonly chatRepo: PrismaChatRepository,
     private readonly configRepo: PrismaCompanyConfigRepository,
     private readonly wsGateway: WhatsAppGateway,
+    private readonly deliveryService: DeliveryService,
   ) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey && apiKey.trim().length > 0) {
@@ -240,9 +242,31 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
         {
           type: 'function',
           function: {
+            name: 'calculate_delivery',
+            description:
+              'Calcula la tarifa de envío para Lima (Zonas 1, 2, 3), Provincias (Agencia Shalom/Marvisur) o Recojo en Tienda en Miraflores (Gratis).',
+            parameters: {
+              type: 'object',
+              properties: {
+                deliveryType: {
+                  type: 'string',
+                  enum: ['PICKUP', 'HOME_DELIVERY', 'PROVINCE_AGENCY'],
+                  description: 'Tipo de entrega ("PICKUP" para recojo en tienda, "HOME_DELIVERY" para envío a domicilio en Lima, "PROVINCE_AGENCY" para provincias).',
+                },
+                districtOrAddress: {
+                  type: 'string',
+                  description: 'Distrito, dirección o ciudad de destino (ej: "Miraflores", "Los Olivos", "Trujillo").',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
             name: 'get_store_info',
             description:
-              'Devuelve información oficial sobre métodos de pago, envíos, horarios de atención y dirección.',
+              'Devuelve información oficial sobre métodos de pago, envíos, horarios de atención y dirección de recojo en tienda.',
             parameters: {
               type: 'object',
               properties: {},
@@ -317,6 +341,19 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
               );
               break;
 
+            case 'calculate_delivery': {
+              const calcResult = this.deliveryService.calculateDelivery(args.deliveryType, args.districtOrAddress);
+              toolResult = JSON.stringify({
+                zoneName: calcResult.zone.name,
+                type: calcResult.zone.type,
+                deliveryFee: calcResult.deliveryFee,
+                estimatedTime: calcResult.zone.estimatedTime,
+                description: calcResult.zone.description,
+                pickupAddress: 'Av. Larco 743, Miraflores, Lima (Gratis)',
+              });
+              break;
+            }
+
             case 'transfer_to_human':
               toolResult = await this.executeTransferToHuman(customerPhone, args.reason);
               break;
@@ -328,6 +365,8 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
                 paymentMethods: config.paymentMethods,
                 workingHours: config.workingHours,
                 address: config.address,
+                pickupLocation: 'Av. Larco 743, Miraflores, Lima (Gratis - Lun a Sáb 9am a 8pm)',
+                deliveryZones: this.deliveryService.getAllDeliveryZones(),
               });
               break;
 
@@ -444,7 +483,7 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
           }),
           mediaUrl: primaryImage.imageUrl,
           mediaType: 'image',
-          caption: `📸 *${product.name}* • $${product.price.toFixed(2)} USD (SKU: ${product.sku})`,
+          caption: `📸 *${product.name}* • S/ ${product.price.toFixed(2)} (SKU: ${product.sku})`,
         };
       }
 
@@ -499,21 +538,23 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
         await this.productRepo.decrementStock(prod.id, item.quantity);
       }
 
-      const deliveryFee = subtotal >= 50 || !customerAddress ? 0 : 3.50;
+      // Calcular costo de envío o recojo en tienda según la dirección/distrito
+      const deliveryCalc = this.deliveryService.calculateDelivery(undefined, customerAddress);
+      const deliveryFee = deliveryCalc.deliveryFee;
       const total = subtotal + deliveryFee;
 
       const newOrder = await this.orderRepo.create(
         {
           customerName,
           customerPhone: phone,
-          customerAddress,
+          customerAddress: customerAddress || 'Coordinar entrega / Recojo en tienda',
           status: OrderStatus.PENDING,
           source: OrderSource.WHATSAPP_BOT,
           subtotal,
           deliveryFee,
           total,
           paymentMethod: 'CULQI_PENDING',
-          notes: `Generado por Asistente AI Luna con link de pago Culqi`,
+          notes: `Generado por Asistente AI Luna - Método: ${deliveryCalc.zone.name} (S/ ${deliveryFee.toFixed(2)})`,
         },
         orderItems,
       );
@@ -529,9 +570,10 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
         subtotal,
         deliveryFee,
         total,
+        deliveryZone: deliveryCalc.zone.name,
         paymentUrl,
         status: newOrder.status,
-        message: `Pedido registrado con éxito. IMPORTANTE: Entrega al cliente el resumen con productos, delivery y el enlace de pago ${paymentUrl} para que pague con Yape o Tarjeta de débito/crédito.`,
+        message: `Pedido registrado con éxito. Informa al cliente que su pedido incluye: Subtotal S/ ${subtotal.toFixed(2)} + ${deliveryCalc.zone.name} S/ ${deliveryFee.toFixed(2)} = Total S/ ${total.toFixed(2)}. Dale el enlace de pago directo ${paymentUrl} para que pague con Yape o Tarjeta de débito/crédito.`,
       });
     } catch (err: any) {
       return JSON.stringify({ success: false, error: err.message });

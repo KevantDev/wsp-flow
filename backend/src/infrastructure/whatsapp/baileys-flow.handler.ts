@@ -237,7 +237,7 @@ export class BaileysFlowHandler {
         this.wsGateway.emitNewOrder(newOrder);
 
         return {
-          replyText: `🎉 *¡Pedido Registrado con Éxito!*\n\n• *Orden:* \`#${newOrder.orderNumber}\`\n• *Producto:* ${selectedProduct.name} x${quantity}\n• *Total a Pagar:* $${total.toFixed(2)} USD\n• *Estado:* Pendiente de Confirmación\n\nUno de nuestros asesores se comunicará para coordinar el pago y envío. ¡Muchas gracias!`,
+          replyText: `🎉 *¡Pedido Registrado con Éxito!*\n\n• *Orden:* \`#${newOrder.orderNumber}\`\n• *Producto:* ${selectedProduct.name} x${quantity}\n• *Total a Pagar:* S/ ${total.toFixed(2)}\n• *Estado:* Pendiente de Confirmación\n\nUno de nuestros asesores se comunicará para coordinar el pago y envío. ¡Muchas gracias!`,
           actionTaken: 'CREATED_ORDER_DETERMINISTIC',
         };
       }

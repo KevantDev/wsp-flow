@@ -2,6 +2,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ProductsService } from '../../core/services/products.service';
+import { CartService } from '../../core/services/cart.service';
+import { CartDrawerComponent } from '../../shared/components/cart-drawer/cart-drawer.component';
 import { Product } from '../../core/models/models';
 
 interface ChatSimulationMessage {
@@ -19,7 +21,7 @@ interface ChatSimulationMessage {
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, CartDrawerComponent],
   template: `
     <div class="min-h-[100dvh] bg-[#F8F9FA] text-zinc-900 font-sans selection:bg-indigo-600 selection:text-white relative overflow-x-hidden">
       
@@ -70,6 +72,20 @@ interface ChatSimulationMessage {
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <span>Catálogo PDF</span>
+              }
+            </button>
+
+            <button
+              (click)="cartService.open()"
+              class="btn-secondary text-xs py-2 px-3 relative flex items-center gap-1.5 font-bold"
+              title="Ver Carrito de Compras"
+            >
+              <span>🛒</span>
+              <span class="hidden sm:inline">Carrito</span>
+              @if (cartService.itemCount() > 0) {
+                <span class="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-bold">
+                  {{ cartService.itemCount() }}
+                </span>
               }
             </button>
 
@@ -204,7 +220,7 @@ interface ChatSimulationMessage {
                     <span>¡Pedido Registrado con Éxito!</span>
                   </div>
                   <p class="text-[11px] leading-relaxed">
-                    Orden <strong>#ORD-1082</strong> creada por <strong>$59.98 USD</strong>. Inventario descontado en PostgreSQL.
+                    Orden <strong>#ORD-1082</strong> creada por <strong>S/ 189.90</strong>. Inventario descontado en PostgreSQL.
                   </p>
                   <span class="text-[9px] text-emerald-700 block text-right font-mono">10:43 AM • Función Ejecutada</span>
                 </div>
@@ -224,7 +240,7 @@ interface ChatSimulationMessage {
                 </span>
               </div>
               <div class="my-2">
-                <span class="text-3xl sm:text-4xl font-extrabold text-zinc-900 font-mono tracking-tight">$18,450.00</span>
+                <span class="text-3xl sm:text-4xl font-extrabold text-zinc-900 font-mono tracking-tight">S/ 18,450.00</span>
                 <p class="text-xs text-zinc-500 mt-0.5">124 pedidos procesados en automático por WhatsApp</p>
               </div>
               <div class="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
@@ -636,17 +652,29 @@ interface ChatSimulationMessage {
                 </p>
               </div>
 
-              <div class="mt-3.5 pt-3 border-t border-zinc-100 flex items-center justify-between">
-                <span class="text-base font-extrabold text-zinc-900 font-mono">&#36;{{ product.price | number: '1.2-2' }}</span>
+              <div class="mt-3.5 pt-3 border-t border-zinc-100 flex items-center justify-between gap-2">
+                <span class="text-base font-extrabold text-zinc-900 font-mono">S/ {{ product.price | number: '1.2-2' }}</span>
                 
-                <a
-                  [href]="'https://wa.me/?text=Hola!%20Quiero%20ordenar%20el%20producto%20' + product.name + '%20(SKU:%20' + product.sku + ')'"
-                  target="_blank"
-                  class="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1 transition-colors active:scale-[0.98]"
-                >
-                  <span>Pedir</span>
-                  <span>➔</span>
-                </a>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    (click)="cartService.addItem(product, 1)"
+                    class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl border border-indigo-200 flex items-center gap-1 transition-colors active:scale-[0.98]"
+                    title="Añadir al Carrito"
+                  >
+                    <span>+ 🛒</span>
+                    <span class="hidden sm:inline">Añadir</span>
+                  </button>
+
+                  <a
+                    [href]="'https://wa.me/?text=Hola!%20Quiero%20ordenar%20el%20producto%20' + product.name + '%20(SKU:%20' + product.sku + ')'"
+                    target="_blank"
+                    class="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 p-1.5 rounded-xl border border-emerald-200 flex items-center justify-center transition-colors active:scale-[0.98]"
+                    title="Pedir por WhatsApp"
+                  >
+                    <span>💬</span>
+                  </a>
+                </div>
               </div>
             </div>
           }
@@ -662,7 +690,7 @@ interface ChatSimulationMessage {
             <h2 class="text-2xl sm:text-4xl font-extrabold text-zinc-900 tracking-tight">
               Precios transparentes
             </h2>
-            <p class="text-zinc-500 text-sm mt-1">Conecta tu WhatsApp y vende sin límites.</p>
+            <p class="text-zinc-500 text-sm mt-1">Conecta tu WhatsApp y vende sin límites en Soles.</p>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
@@ -673,7 +701,7 @@ interface ChatSimulationMessage {
                 <h3 class="font-bold text-zinc-900 text-lg">Starter</h3>
                 <p class="text-xs text-zinc-500 mt-1">Para emprendedores y tiendas iniciales</p>
                 <div class="my-4">
-                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">&#36;29</span>
+                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">S/ 99</span>
                   <span class="text-xs text-zinc-500 font-medium"> / mes</span>
                 </div>
                 <ul class="space-y-2.5 text-xs text-zinc-600">
@@ -695,7 +723,7 @@ interface ChatSimulationMessage {
                 <h3 class="font-bold text-zinc-900 text-lg">Business IA</h3>
                 <p class="text-xs text-zinc-500 mt-1">Para negocios con ventas activas y stock</p>
                 <div class="my-4">
-                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">&#36;59</span>
+                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">S/ 199</span>
                   <span class="text-xs text-zinc-500 font-medium"> / mes</span>
                 </div>
                 <ul class="space-y-2.5 text-xs text-zinc-700 font-medium">
@@ -715,7 +743,7 @@ interface ChatSimulationMessage {
                 <h3 class="font-bold text-zinc-900 text-lg">Enterprise</h3>
                 <p class="text-xs text-zinc-500 mt-1">Para distribuidoras y cadenas multi-sucursal</p>
                 <div class="my-4">
-                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">&#36;129</span>
+                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">S/ 399</span>
                   <span class="text-xs text-zinc-500 font-medium"> / mes</span>
                 </div>
                 <ul class="space-y-2.5 text-xs text-zinc-600">
@@ -797,11 +825,36 @@ interface ChatSimulationMessage {
         </div>
       </footer>
 
+      <!-- ================= FLOATING CART CTA BUTTON ================= -->
+      @if (cartService.itemCount() > 0) {
+        <div class="fixed bottom-6 right-6 z-40 animate-fade-in">
+          <button
+            (click)="cartService.open()"
+            class="flex items-center gap-3 py-3 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-600/30 border border-indigo-500 hover:scale-105 active:scale-95 transition-all"
+          >
+            <span class="text-xl">🛒</span>
+            <div class="text-left">
+              <span class="block text-[10px] uppercase tracking-wider text-indigo-200 font-mono font-semibold">
+                {{ cartService.itemCount() }} {{ cartService.itemCount() === 1 ? 'producto' : 'productos' }}
+              </span>
+              <span class="block font-mono font-extrabold text-sm">
+                S/ {{ cartService.subtotal() | number: '1.2-2' }}
+              </span>
+            </div>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse ml-1"></span>
+          </button>
+        </div>
+      }
+
+      <!-- App Cart Drawer Slide-over -->
+      <app-cart-drawer></app-cart-drawer>
+
     </div>
   `,
 })
 export class LandingComponent implements OnInit {
   private productsService = inject(ProductsService);
+  cartService = inject(CartService);
 
   publicProducts = signal<Product[]>([]);
   isDownloadingPdf = signal(false);
@@ -910,7 +963,7 @@ export class LandingComponent implements OnInit {
           {
             sender: 'bot',
             senderName: 'Luna (IA)',
-            text: '¡Sí, tenemos stock disponible!\n\nAuriculares Bluetooth Pro\n• Código: PROD-01\n• Precio: $29.99 USD\n• Stock actual: 25 unidades disponibles\n\n¿Te gustaría que te reserve alguno?',
+            text: '¡Sí, tenemos stock disponible!\n\nAuriculares Bluetooth Pro\n• Código: PROD-01\n• Precio: S/ 189.90\n• Stock actual: 25 unidades disponibles\n\n¿Te gustaría que te reserve alguno?',
             time: '10:46 AM',
           },
         ]);
@@ -920,7 +973,7 @@ export class LandingComponent implements OnInit {
         {
           sender: 'user',
           senderName: 'Tú',
-          text: 'Quiero ordenar 2 unidades del Reloj Inteligente para Martín Silva en Av. Corrientes 1234',
+          text: 'Quiero ordenar 2 unidades del Reloj Inteligente para Martín Silva en Av. Larco 743, Miraflores',
           time: '10:47 AM',
         },
       ]);
@@ -932,11 +985,11 @@ export class LandingComponent implements OnInit {
           {
             sender: 'bot',
             senderName: 'Luna (IA)',
-            text: '¡Excelente Martín! Tu pedido ha sido registrado con éxito.\n\nDetalle de la compra:\n• 2x Reloj Inteligente V2\n• Total a Pagar: $99.98 USD\n• Envío a: Av. Corrientes 1234\n\nNuestro equipo ya lo tiene en la columna Por Atender del panel To-Do para su despacho.',
+            text: '¡Excelente Martín! Tu pedido ha sido registrado con éxito.\n\nDetalle de la compra:\n• 2x Reloj Inteligente Titanium (S/ 289.00 c/u)\n• Total a Pagar: S/ 578.00\n• Envío a: Av. Larco 743, Miraflores, Lima\n\nNuestro equipo ya lo tiene en la columna Por Atender del panel To-Do para su despacho.',
             time: '10:47 AM',
             isOrderCard: true,
             orderNumber: '#ORD-2045',
-            orderTotal: '$99.98 USD',
+            orderTotal: 'S/ 578.00',
           },
         ]);
       }, 1000);

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaChatRepository } from '../../infrastructure/persistence/prisma/repositories/prisma-chat.repository';
 import { BaileysService } from '../../infrastructure/whatsapp/baileys.service';
-import { SendManualMessageDto, ToggleBotDto } from '../dtos/chat.dto';
+import { SendManualMessageDto, ToggleBotDto, CreateChatSessionDto } from '../dtos/chat.dto';
 
 @Injectable()
 export class ChatService {
@@ -14,10 +14,18 @@ export class ChatService {
     return this.chatRepo.findAllSessions();
   }
 
-  async getSessionMessages(chatSessionId: string) {
-    const messages = await this.chatRepo.getMessages(chatSessionId, 100);
+  async createOrGetSession(dto: CreateChatSessionDto) {
+    return this.chatRepo.findOrCreateSession(dto.customerPhone, dto.customerName);
+  }
+
+  async getSessionMessages(chatSessionId: string, limit = 30, offset = 0) {
+    const result = await this.chatRepo.getMessagesPaginated(
+      chatSessionId,
+      Number(limit) || 30,
+      Number(offset) || 0,
+    );
     await this.chatRepo.markMessagesAsRead(chatSessionId);
-    return messages;
+    return result;
   }
 
   async toggleBot(dto: ToggleBotDto) {

@@ -147,7 +147,7 @@ import { Product, Category, ProductImage } from '../../core/models/models';
               <div class="mt-4 pt-3 border-t border-zinc-100 flex items-baseline justify-between">
                 <div>
                   <span class="text-[10px] uppercase font-mono text-zinc-400 font-semibold block">Precio</span>
-                  <p class="text-xl font-extrabold tracking-tight text-zinc-900 font-mono">&#36;{{ product.price | number: '1.2-2' }}</p>
+                  <p class="text-xl font-extrabold tracking-tight text-zinc-900 font-mono">S/ {{ product.price | number: '1.2-2' }}</p>
                 </div>
                 
                 <!-- Quick Stock Adjuster -->
@@ -251,7 +251,7 @@ import { Product, Category, ProductImage } from '../../core/models/models';
 
             <div class="grid grid-cols-3 gap-3">
               <div>
-                <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Precio ($)</label>
+                <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">Precio (S/.)</label>
                 <input type="number" step="0.01" [(ngModel)]="formData.price" name="price" required class="input-bento font-mono text-xs" />
               </div>
               <div>

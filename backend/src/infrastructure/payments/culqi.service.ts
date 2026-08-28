@@ -62,7 +62,7 @@ export class CulqiService {
         success: true,
         chargeId: `chr_test_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
         amount,
-        currency: 'USD',
+        currency: 'PEN',
         paymentMethod: 'TARJETA_CREDITO_DEBITO',
         message: 'Pago con tarjeta simulado exitosamente en entorno de desarrollo.',
       };
@@ -73,7 +73,7 @@ export class CulqiService {
         `${this.baseUrl}/charges`,
         {
           amount: amountInCents,
-          currency_code: 'USD',
+          currency_code: 'PEN',
           email,
           source_id: tokenId,
           description: `Compra WSP Flow Orden #${orderNumber}`,

@@ -38,7 +38,8 @@ export class PrismaChatRepository implements IChatRepository {
     });
   }
 
-  async findOrCreateSession(customerPhone: string, customerName?: string): Promise<ChatSessionEntity> {
+  async findOrCreateSession(rawPhone: string, customerName?: string): Promise<ChatSessionEntity> {
+    const customerPhone = rawPhone.replace(/\D/g, '');
     let session = await this.prisma.chatSession.findUnique({
       where: { customerPhone },
       include: { assignedUser: true },
@@ -53,7 +54,7 @@ export class PrismaChatRepository implements IChatRepository {
         },
         include: { assignedUser: true },
       });
-    } else if (customerName && session.customerName !== customerName) {
+    } else if (customerName && customerName !== 'Cliente WhatsApp' && session.customerName !== customerName) {
       session = await this.prisma.chatSession.update({
         where: { id: session.id },
         data: { customerName },
@@ -64,7 +65,8 @@ export class PrismaChatRepository implements IChatRepository {
     return this.mapSession(session);
   }
 
-  async findSessionByPhone(customerPhone: string): Promise<ChatSessionEntity | null> {
+  async findSessionByPhone(rawPhone: string): Promise<ChatSessionEntity | null> {
+    const customerPhone = rawPhone.replace(/\D/g, '');
     const session = await this.prisma.chatSession.findUnique({
       where: { customerPhone },
       include: { assignedUser: true, messages: { take: 20, orderBy: { createdAt: 'desc' } } },
@@ -87,7 +89,8 @@ export class PrismaChatRepository implements IChatRepository {
     return sessions.map((s) => this.mapSession(s));
   }
 
-  async toggleBot(customerPhone: string, isBotActive: boolean): Promise<ChatSessionEntity> {
+  async toggleBot(rawPhone: string, isBotActive: boolean): Promise<ChatSessionEntity> {
+    const customerPhone = rawPhone.replace(/\D/g, '');
     const session = await this.prisma.chatSession.update({
       where: { customerPhone },
       data: { isBotActive },
@@ -138,6 +141,29 @@ export class PrismaChatRepository implements IChatRepository {
       take: limit,
     });
     return messages.reverse().map((m) => this.mapMessage(m));
+  }
+
+  async getMessagesPaginated(
+    chatSessionId: string,
+    limit = 30,
+    offset = 0,
+  ): Promise<{ messages: ChatMessageEntity[]; hasMore: boolean; total: number }> {
+    const total = await this.prisma.chatMessage.count({
+      where: { chatSessionId },
+    });
+
+    const messages = await this.prisma.chatMessage.findMany({
+      where: { chatSessionId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset,
+    });
+
+    return {
+      messages: messages.reverse().map((m) => this.mapMessage(m)),
+      hasMore: offset + messages.length < total,
+      total,
+    };
   }
 
   async markMessagesAsRead(chatSessionId: string): Promise<void> {

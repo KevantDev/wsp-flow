@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   BadRequestException,
@@ -14,6 +15,7 @@ import { PrismaOrderRepository } from '../../infrastructure/persistence/prisma/r
 import { PrismaProductRepository } from '../../infrastructure/persistence/prisma/repositories/prisma-product.repository';
 import { WhatsAppGateway } from '../gateways/whatsapp.gateway';
 import { BaileysService } from '../../infrastructure/whatsapp/baileys.service';
+import { DeliveryService, DeliveryType } from '../../application/services/delivery.service';
 import { OrderStatus } from '../../domain/entities/order.entity';
 import { Public } from '../../core/decorators/public.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
@@ -30,7 +32,17 @@ export class PaymentsController {
     private readonly productRepo: PrismaProductRepository,
     private readonly wsGateway: WhatsAppGateway,
     private readonly baileysService: BaileysService,
+    private readonly deliveryService: DeliveryService,
   ) {}
+
+  /**
+   * Obtiene la lista oficial de zonas de entrega y recojo en tienda para Perú
+   */
+  @Public()
+  @Get('delivery-zones')
+  getDeliveryZones() {
+    return this.deliveryService.getAllDeliveryZones();
+  }
 
   /**
    * Obtiene los datos públicos de una orden para mostrar en la pantalla de pago /pay/:orderNumber
@@ -55,6 +67,72 @@ export class PaymentsController {
       paymentMethod: order.paymentMethod,
       items: order.items || [],
       culqiPublicKey: this.culqiService.getPublicKey(),
+    };
+  }
+
+  /**
+   * Actualiza el método de entrega (Recojo en tienda, Lima a domicilio, Provincias) de una orden
+   */
+  @Public()
+  @Patch('order/:orderNumber/delivery')
+  async updateOrderDelivery(
+    @Param('orderNumber') orderNumber: string,
+    @Body()
+    body: {
+      deliveryType: DeliveryType;
+      district?: string;
+      address?: string;
+      customerName?: string;
+      customerPhone?: string;
+      customerDni?: string;
+      notes?: string;
+    },
+  ) {
+    const order = await this.orderRepo.findByOrderNumber(orderNumber);
+    if (!order) {
+      throw new NotFoundException('Orden no encontrada');
+    }
+
+    if (order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.DELIVERED) {
+      throw new BadRequestException('No se puede modificar una orden ya pagada');
+    }
+
+    const { deliveryType, district, address, customerName, customerPhone, customerDni, notes } = body;
+    const targetAddress = deliveryType === 'PICKUP' 
+      ? 'Recojo en Tienda (Av. Larco 743, Miraflores, Lima)' 
+      : (address ? `${address}${district ? ', ' + district : ''}` : (district || order.customerAddress || ''));
+
+    const { zone, deliveryFee } = this.deliveryService.calculateDelivery(deliveryType, district || address);
+    const newTotal = order.subtotal + deliveryFee;
+
+    let updatedNotes = order.notes || '';
+    if (customerDni && !updatedNotes.includes(`DNI: ${customerDni}`)) {
+      updatedNotes = `${updatedNotes} [DNI: ${customerDni}]`.trim();
+    }
+    if (notes) {
+      updatedNotes = `${updatedNotes} | ${notes}`.trim();
+    }
+
+    const updated = await this.orderRepo.updateDelivery(order.id, {
+      customerName: customerName || order.customerName,
+      customerPhone: customerPhone ? customerPhone.replace(/\D/g, '') : order.customerPhone,
+      customerAddress: targetAddress,
+      deliveryFee,
+      total: newTotal,
+      notes: updatedNotes || undefined,
+    });
+
+    this.wsGateway.emitOrderStatusUpdate({
+      orderId: updated.id,
+      orderNumber: updated.orderNumber,
+      status: updated.status,
+    });
+
+    return {
+      success: true,
+      message: 'Método de entrega actualizado con éxito',
+      order: updated,
+      deliveryZone: zone,
     };
   }
 
@@ -106,7 +184,7 @@ export class PaymentsController {
     });
 
     // Disparar mensaje de confirmación por WhatsApp
-    const confirmationText = `✅ *¡Pago Confirmado con Éxito!* 🎉\n\n• *Orden:* \`#${updated.orderNumber}\`\n• *Monto Pagado:* $${updated.total.toFixed(2)} USD\n• *Método:* Tarjeta de Crédito/Débito (Culqi)\n• *Transacción:* \`${result.chargeId}\`\n\nTu pedido ha pasado al área de empaque y despacho 📦. ¡Muchas gracias por tu compra!`;
+    const confirmationText = `✅ *¡Pago Confirmado con Éxito!* 🎉\n\n• *Orden:* \`#${updated.orderNumber}\`\n• *Monto Pagado:* S/ ${updated.total.toFixed(2)}\n• *Método:* Tarjeta de Crédito/Débito (Culqi)\n• *Transacción:* \`${result.chargeId}\`\n\nTu pedido ha pasado al área de empaque y despacho 📦. ¡Muchas gracias por tu compra!`;
     await this.baileysService.sendManualMessage(updated.customerPhone, confirmationText, 'Sistema Culqi');
 
     return {
@@ -265,7 +343,7 @@ export class PaymentsController {
     });
 
     // Enviar notificación de reembolso por WhatsApp
-    const refundText = `💸 *Reembolso Procesado con Éxito*\n\n• *Orden:* \`#${updated.orderNumber}\`\n• *Monto Devuelto:* $${updated.total.toFixed(2)} USD\n• *Código de Reembolso:* \`${refundResult.refundId}\`\n\nEl dinero ha sido reintegrado a tu cuenta/medio de pago original. Si tienes alguna duda, responde a este chat.`;
+    const refundText = `💸 *Reembolso Procesado con Éxito*\n\n• *Orden:* \`#${updated.orderNumber}\`\n• *Monto Devuelto:* S/ ${updated.total.toFixed(2)}\n• *Código de Reembolso:* \`${refundResult.refundId}\`\n\nEl dinero ha sido reintegrado a tu cuenta/medio de pago original. Si tienes alguna duda, responde a este chat.`;
     await this.baileysService.sendManualMessage(updated.customerPhone, refundText, 'Administración');
 
     return {

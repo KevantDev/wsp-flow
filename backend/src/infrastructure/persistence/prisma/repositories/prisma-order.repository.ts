@@ -154,6 +154,32 @@ export class PrismaOrderRepository implements IOrderRepository {
     return this.mapToEntity(updated);
   }
 
+  async updateDelivery(
+    id: string,
+    data: {
+      customerName?: string;
+      customerPhone?: string;
+      customerAddress?: string;
+      deliveryFee: number;
+      total: number;
+      notes?: string;
+    },
+  ): Promise<OrderEntity> {
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: {
+        ...(data.customerName && { customerName: data.customerName }),
+        ...(data.customerPhone && { customerPhone: data.customerPhone }),
+        ...(data.customerAddress && { customerAddress: data.customerAddress }),
+        deliveryFee: data.deliveryFee,
+        total: data.total,
+        ...(data.notes && { notes: data.notes }),
+      },
+      include: { items: true, handledBy: true },
+    });
+    return this.mapToEntity(updated);
+  }
+
   async getMetrics(): Promise<{ totalRevenue: number; totalOrders: number; pendingOrders: number; completedOrders: number }> {
     const orders = await this.prisma.order.findMany();
     const totalRevenue = orders

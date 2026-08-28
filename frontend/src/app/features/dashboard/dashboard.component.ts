@@ -34,7 +34,7 @@ import { DashboardMetrics, SessionStatus, WhatsAppStatus } from '../../core/mode
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
         <app-stats-card
           title="Facturación Total"
-          [value]="'$' + (metrics()?.financial?.totalRevenue || 0 | number: '1.2-2')"
+          [value]="'S/ ' + (metrics()?.financial?.totalRevenue || 0 | number: '1.2-2')"
           trend="18.5%"
           [trendUp]="true"
           subtitle="Ventas acumuladas procesadas"

@@ -15,6 +15,7 @@ import { PrismaWhatsAppSessionRepository } from '../persistence/prisma/repositor
 import { PrismaChatRepository } from '../persistence/prisma/repositories/prisma-chat.repository';
 import { PrismaCompanyConfigRepository } from '../persistence/prisma/repositories/prisma-company-config.repository';
 import { BaileysFlowHandler } from './baileys-flow.handler';
+import { DeliveryService } from '../../application/services/delivery.service';
 import { SessionStatus } from '../../domain/entities/whatsapp-session.entity';
 import { MessageSender } from '../../domain/entities/chat-session.entity';
 
@@ -47,6 +48,7 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     private readonly chatRepo: PrismaChatRepository,
     private readonly configRepo: PrismaCompanyConfigRepository,
     private readonly flowHandler: BaileysFlowHandler,
+    private readonly deliveryService: DeliveryService,
   ) {}
 
   async onModuleInit() {
@@ -159,11 +161,25 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
           const customerPhone = remoteJid.replace('@s.whatsapp.net', '');
           const customerName = msg.pushName || 'Cliente WhatsApp';
 
-          const textContent =
+          // Extraer texto o ubicación GPS (Pin de WhatsApp)
+          const location = msg.message.locationMessage || msg.message.liveLocationMessage;
+          let textContent =
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
             msg.message.imageMessage?.caption ||
             '';
+
+          if (location && location.degreesLatitude && location.degreesLongitude) {
+            try {
+              const locResult = await this.deliveryService.resolveLocationFromCoords(
+                location.degreesLatitude,
+                location.degreesLongitude,
+              );
+              textContent = `📍 [Ubicación GPS: ${locResult.formattedAddress} | Distrito: ${locResult.district} | Tarifa Delivery: S/ ${locResult.deliveryFee.toFixed(2)}]`;
+            } catch (e) {
+              textContent = `📍 [Ubicación GPS: Lat ${location.degreesLatitude}, Lng ${location.degreesLongitude}]`;
+            }
+          }
 
           if (!textContent) continue;
 
@@ -392,7 +408,12 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     const chatSession = await this.chatRepo.findOrCreateSession(formattedPhone);
 
     if (this.socket && this.connectionStatus === SessionStatus.CONNECTED) {
-      await this.socket.sendMessage(remoteJid, { text });
+      try {
+        await this.socket.sendMessage(remoteJid, { text });
+        this.logger.log(`📤 Mensaje manual enviado por WhatsApp a [${formattedPhone}]`);
+      } catch (err: any) {
+        this.logger.error(`Error enviando mensaje WhatsApp a ${formattedPhone}: ${err.message}`);
+      }
     }
 
     const savedMsg = await this.chatRepo.saveMessage({
