@@ -264,6 +264,23 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
         {
           type: 'function',
           function: {
+            name: 'track_order',
+            description:
+              'Consulta el estado actual en tiempo real de un pedido, sus productos, monto total, estado de pago y seguimiento de entrega por código de orden o usando el teléfono del cliente.',
+            parameters: {
+              type: 'object',
+              properties: {
+                orderNumber: {
+                  type: 'string',
+                  description: 'Código de la orden (ej: "ORD-2026-0001", "ORD-2026-0003"). Opcional si se consulta por el teléfono del cliente.',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
             name: 'get_store_info',
             description:
               'Devuelve información oficial sobre métodos de pago, envíos, horarios de atención y dirección de recojo en tienda.',
@@ -353,6 +370,10 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
               });
               break;
             }
+
+            case 'track_order':
+              toolResult = await this.executeTrackOrder(customerPhone, args.orderNumber);
+              break;
 
             case 'transfer_to_human':
               toolResult = await this.executeTransferToHuman(customerPhone, args.reason);
@@ -577,6 +598,70 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
       });
     } catch (err: any) {
       return JSON.stringify({ success: false, error: err.message });
+    }
+  }
+
+  private async executeTrackOrder(phone: string, orderNumber?: string): Promise<string> {
+    try {
+      const cleanPhone = phone.replace(/\D/g, '');
+      let order = null;
+      if (orderNumber) {
+        order = await this.orderRepo.findByOrderNumber(orderNumber.trim().toUpperCase());
+      }
+      if (!order) {
+        const list = await this.orderRepo.findAll({ customerPhone: cleanPhone, limit: 1 });
+        if (list && list.length > 0) {
+          order = list[0];
+        }
+      }
+
+      if (!order) {
+        return JSON.stringify({
+          found: false,
+          message:
+            'No se encontró ningún pedido reciente asociado a este número ni al código de orden ingresado.',
+        });
+      }
+
+      const statusLabels: Record<string, string> = {
+        PENDING: '⏳ Pendiente de Pago / Confirmación',
+        CONFIRMED: '✅ Pago Confirmado (En cola de empaquetado)',
+        PROCESSING: '📦 En Preparación (Almacén empacando productos)',
+        SHIPPED: '🚚 En Camino (Despachado en ruta de entrega)',
+        DELIVERED: '🎉 Entregado con éxito',
+        CANCELLED: '❌ Cancelado',
+      };
+
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+
+      return JSON.stringify({
+        found: true,
+        orderNumber: order.orderNumber,
+        customerName: order.customerName,
+        status: order.status,
+        statusLabel: statusLabels[order.status] || order.status,
+        subtotal: order.subtotal,
+        deliveryFee: order.deliveryFee,
+        total: order.total,
+        deliveryAddress: order.customerAddress,
+        items: (order.items || []).map((i) => ({
+          product: i.productName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          subtotal: i.subtotal,
+        })),
+        isPaid: Boolean(
+          order.paidAt ||
+            order.status === OrderStatus.CONFIRMED ||
+            order.status === OrderStatus.PROCESSING ||
+            order.status === OrderStatus.SHIPPED ||
+            order.status === OrderStatus.DELIVERED,
+        ),
+        paymentUrl:
+          order.status === OrderStatus.PENDING ? `${baseUrl}/pay/${order.orderNumber}` : null,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ found: false, error: err.message });
     }
   }
 

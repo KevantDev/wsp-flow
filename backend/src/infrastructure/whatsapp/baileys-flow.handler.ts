@@ -126,7 +126,70 @@ export class BaileysFlowHandler {
     }
 
     // =========================================================================
-    // 4. MOTOR PRINCIPAL DE IA: OpenAI GPT-5.6-luna con Function Calling & Memoria
+    // 4. FAST-PATH 0 TOKENS: Consulta Directa de Estado de Pedido
+    // =========================================================================
+    const isOrderStatusQuery =
+      cleanText.includes('estado de mi pedido') ||
+      cleanText.includes('estado de mi compra') ||
+      cleanText.includes('estado del pedido') ||
+      cleanText.includes('como va mi pedido') ||
+      cleanText.includes('como va mi compra') ||
+      cleanText.includes('seguimiento de mi') ||
+      cleanText.includes('rastrear pedido') ||
+      cleanText.startsWith('orden #') ||
+      cleanText.startsWith('pedido #') ||
+      cleanText.startsWith('ord-');
+
+    if (isOrderStatusQuery) {
+      const orderMatch = rawText.match(/ORD-[\d-]+/i);
+      let order = null;
+      if (orderMatch) {
+        order = await this.orderRepo.findByOrderNumber(orderMatch[0].toUpperCase());
+      }
+      if (!order) {
+        const cleanP = customerPhone.replace(/\D/g, '');
+        const list = await this.orderRepo.findAll({ customerPhone: cleanP, limit: 1 });
+        if (list && list.length > 0) {
+          order = list[0];
+        }
+      }
+
+      if (order) {
+        const statusMap: Record<string, string> = {
+          PENDING: '⏳ *Pendiente de Pago / Confirmación*',
+          CONFIRMED: '✅ *Pago Confirmado* (En cola de empaquetado)',
+          PROCESSING: '📦 *En Preparación* (Empaquetando en almacén)',
+          SHIPPED: '🚚 *En Camino* (Despachado con repartidor / agencia)',
+          DELIVERED: '🎉 *Entregado con éxito*',
+          CANCELLED: '❌ *Cancelado*',
+        };
+
+        const itemsList = (order.items || [])
+          .map((i) => `• ${i.quantity}x ${i.productName} (S/ ${i.subtotal.toFixed(2)})`)
+          .join('\n');
+
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+        const payUrl = `${baseUrl}/pay/${order.orderNumber}`;
+
+        return {
+          replyText:
+            `📦 *Estado de tu Pedido #${order.orderNumber}*\n\n` +
+            `• *Comprador:* ${order.customerName}\n` +
+            `• *Estado Actual:* ${statusMap[order.status] || order.status}\n` +
+            `• *Modalidad de Entrega:* ${order.customerAddress || 'Coordinar con asesor'}\n` +
+            `• *Total:* S/ ${order.total.toFixed(2)} PEN\n\n` +
+            `📋 *Productos:*\n${itemsList || '• Productos registrados'}\n\n` +
+            (order.status === OrderStatus.PENDING
+              ? `💳 *Paga tu pedido de forma segura aquí:* ${payUrl}\n\n`
+              : '') +
+            `Si necesitas comunicarte con un asesor, solo escribe *asesor*. ✨`,
+          actionTaken: 'FAST_PATH_ORDER_STATUS',
+        };
+      }
+    }
+
+    // =========================================================================
+    // 5. MOTOR PRINCIPAL DE IA: OpenAI GPT-5.6-luna con Function Calling & Memoria
     // =========================================================================
     if (this.aiService.isAvailable()) {
       this.logger.log(`🧠 Procesando con OpenAI GPT-5.6-luna y Function Calling...`);

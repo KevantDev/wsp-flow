@@ -101,26 +101,65 @@ export class OrdersService {
     // Notificar al cliente por WhatsApp sobre el cambio de estado si está conectado
     if (updated.customerPhone) {
       try {
-        let msg = `🔔 *Actualización de tu Pedido #${updated.orderNumber}*\n\n`;
+        let itemsText = (updated.items || [])
+          .map((i) => `• ${i.quantity}x ${i.productName}`)
+          .join('\n');
+        if (!itemsText && existing.items) {
+          itemsText = existing.items.map((i) => `• ${i.quantity}x ${i.productName}`).join('\n');
+        }
+
+        let msg = '';
+        const name = updated.customerName || 'Estimado(a) Cliente';
+        const address = updated.customerAddress || 'Coordinar con asesor';
+
         switch (dto.status) {
           case OrderStatus.CONFIRMED:
-            msg += `✅ Tu pedido ha sido *CONFIRMADO* y está siendo preparado por nuestro equipo.`;
+            msg =
+              `✅ *¡Pago Confirmado! Pedido #${updated.orderNumber}* 🎉\n\n` +
+              `Hola ${name}, hemos validado tu pago por *S/ ${updated.total.toFixed(2)} PEN*.\n\n` +
+              `📋 *Productos:*\n${itemsText || '• Productos seleccionados'}\n\n` +
+              `Tu pedido pasa inmediatamente a nuestro equipo de preparación 📦.`;
             break;
           case OrderStatus.PROCESSING:
-            msg += `📦 Tu pedido está *EN PREPARACIÓN* para su despacho.`;
+            msg =
+              `📦 *Tu Pedido #${updated.orderNumber} está en Preparación* ⚙️\n\n` +
+              `Hola ${name}, nuestro equipo de almacén está empacando tus productos cuidadosamente para su despacho:\n\n` +
+              `📍 *Destino:* ${address}\n` +
+              `📋 *Productos:*\n${itemsText || '• Productos en empaque'}\n\n` +
+              `Te notificaremos en cuanto el repartidor o agencia reciba tu paquete.`;
             break;
           case OrderStatus.SHIPPED:
-            msg += `🚚 ¡Buenas noticias! Tu pedido ha sido *ENVIADO* con nuestro repartidor.`;
+            msg =
+              `🚚 *¡Tu Pedido #${updated.orderNumber} va en Camino!* 🚀\n\n` +
+              `Hola ${name}, tu pedido ha sido despachado:\n` +
+              `📍 *Dirección de Entrega:* ${address}\n\n` +
+              `🛵 *Tiempo estimado:* Entre 2 a 4 horas (o según guía en agencia).\n` +
+              `Por favor mantén tu teléfono atento para la entrega. ¡Muchas gracias!`;
             break;
           case OrderStatus.DELIVERED:
-            msg += `🎉 Tu pedido ha sido *ENTREGADO*. ¡Muchas gracias por tu compra!`;
+            msg =
+              `🎉 *¡Pedido #${updated.orderNumber} Entregado con Éxito!* ✨\n\n` +
+              `Hola ${name}, confirmamos que tu pedido ha sido entregado en ${address}.\n\n` +
+              `¡Muchas gracias por tu compra y confianza en nosotros! ⭐ Si necesitas algo más, aquí estamos para ayudarte.`;
             break;
           case OrderStatus.CANCELLED:
-            msg += `❌ Tu pedido ha sido *CANCELADO*. Por favor comunícate con un asesor si tienes dudas.`;
+            msg =
+              `❌ *Notificación: Pedido #${updated.orderNumber} Cancelado*\n\n` +
+              `Hola ${name}, te informamos que tu pedido ha sido cancelado y las unidades han sido restauradas al inventario.\n\n` +
+              `Si tienes alguna duda o deseas reprogramar tu compra, un asesor te responderá por este chat.`;
+            break;
+          case OrderStatus.PENDING:
+            msg =
+              `⏳ *Pedido #${updated.orderNumber} Registrado*\n\n` +
+              `Hola ${name}, tu pedido por *S/ ${updated.total.toFixed(2)} PEN* se encuentra registrado y pendiente de pago.\n\n` +
+              `💳 *Paga en línea aquí:* http://localhost:4200/pay/${updated.orderNumber}\n\n` +
+              `O coordina con un asesor por aquí si deseas pagar con otro método.`;
             break;
         }
 
-        await this.baileysService.sendManualMessage(updated.customerPhone, msg, 'Sistema WSP');
+        if (msg) {
+          await this.baileysService.sendManualMessage(updated.customerPhone, msg, 'Sistema WSP');
+        }
       } catch (err) {
         // En caso de que Baileys no esté conectado, no bloquear la respuesta
       }

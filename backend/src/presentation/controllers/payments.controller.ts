@@ -243,7 +243,7 @@ export class PaymentsController {
     });
 
     // Disparar mensaje de confirmación por WhatsApp
-    const confirmationText = `💜 *¡Pago con Yape Confirmado!* 🎉\n\n• *Orden:* \`#${updated.orderNumber}\`\n• *Total Pagado:* $${updated.total.toFixed(2)} USD\n• *Método:* Yape (Culqi)\n• *Código de Transacción:* \`${result.chargeId}\`\n\nTu pedido ya está siendo preparado para el envío 🚀.`;
+    const confirmationText = `💜 *¡Pago con Yape Confirmado!* 🎉\n\n• *Orden:* \`#${updated.orderNumber}\`\n• *Total Pagado:* S/ ${updated.total.toFixed(2)} PEN\n• *Método:* Yape (Culqi)\n• *Código de Transacción:* \`${result.chargeId}\`\n\nTu pedido ya está siendo preparado para el despacho 🚀.`;
     await this.baileysService.sendManualMessage(updated.customerPhone, confirmationText, 'Sistema Culqi');
 
     return {
