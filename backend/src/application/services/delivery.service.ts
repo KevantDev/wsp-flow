@@ -308,12 +308,37 @@ export class DeliveryService {
   async resolveLocationFromCoords(
     latitude: number,
     longitude: number,
+    hintAddress?: string,
+    hintName?: string,
   ): Promise<GeocodedLocationResult> {
-    this.logger.log(`📍 Geocodificando ubicación GPS: [${latitude}, ${longitude}]`);
+    this.logger.log(
+      `📍 Geocodificando ubicación GPS: [${latitude}, ${longitude}] | Hint: "${hintName || ''} - ${hintAddress || ''}"`,
+    );
 
-    let district = 'Lima';
+    let district = 'Miraflores';
     let city = 'Lima';
-    let formattedAddress = `Coordenadas: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+    let formattedAddress = hintName || hintAddress || `Coordenadas: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+    // Comprobar si el hint de WhatsApp ya contiene un distrito reconocido
+    const fullHint = `${hintName || ''} ${hintAddress || ''}`.toLowerCase();
+    for (const d of LIMA_ZONA1_DISTRICTS) {
+      if (fullHint.includes(d)) {
+        district = d.charAt(0).toUpperCase() + d.slice(1);
+        break;
+      }
+    }
+    for (const d of LIMA_ZONA2_DISTRICTS) {
+      if (fullHint.includes(d)) {
+        district = d.charAt(0).toUpperCase() + d.slice(1);
+        break;
+      }
+    }
+    for (const d of LIMA_ZONA3_DISTRICTS) {
+      if (fullHint.includes(d)) {
+        district = d.charAt(0).toUpperCase() + d.slice(1);
+        break;
+      }
+    }
 
     try {
       const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
@@ -322,6 +347,7 @@ export class DeliveryService {
           lon: longitude,
           format: 'json',
           addressdetails: 1,
+          'accept-language': 'es',
         },
         headers: {
           'User-Agent': 'WspFlowEcommerce/1.0 (info@wspflow.com)',
@@ -329,35 +355,68 @@ export class DeliveryService {
         timeout: 4000,
       });
 
-      if (response.data && response.data.address) {
-        const addr = response.data.address;
-        district =
-          addr.suburb ||
-          addr.city_district ||
-          addr.district ||
-          addr.town ||
-          addr.village ||
-          addr.city ||
-          'Lima';
+      if (response.data) {
+        const addr = response.data.address || {};
+        const displayName = (response.data.display_name || '').toLowerCase();
+
+        // Buscar coincidencia exacta de distrito en todo el display_name o campos
+        let detectedDistrict = '';
+        for (const d of [...LIMA_ZONA1_DISTRICTS, ...LIMA_ZONA2_DISTRICTS, ...LIMA_ZONA3_DISTRICTS]) {
+          if (
+            displayName.includes(d) ||
+            (addr.suburb && addr.suburb.toLowerCase().includes(d)) ||
+            (addr.city_district && addr.city_district.toLowerCase().includes(d)) ||
+            (addr.district && addr.district.toLowerCase().includes(d)) ||
+            (addr.town && addr.town.toLowerCase().includes(d)) ||
+            (addr.village && addr.village.toLowerCase().includes(d))
+          ) {
+            detectedDistrict = d.charAt(0).toUpperCase() + d.slice(1);
+            break;
+          }
+        }
+
+        if (detectedDistrict) {
+          district = detectedDistrict;
+        } else {
+          district =
+            addr.suburb ||
+            addr.city_district ||
+            addr.district ||
+            addr.town ||
+            addr.village ||
+            addr.city ||
+            district;
+        }
+
         city = addr.city || addr.state || 'Lima';
 
-        const road = addr.road || addr.pedestrian || '';
+        const road = addr.road || addr.pedestrian || addr.street || '';
         const houseNumber = addr.house_number || '';
-        formattedAddress = [road, houseNumber, district, city].filter(Boolean).join(', ');
+        const roadWithNumber = [road, houseNumber].filter(Boolean).join(' ');
+
+        if (roadWithNumber) {
+          formattedAddress = `${roadWithNumber}, ${district}, ${city}`;
+        } else if (hintName || hintAddress) {
+          formattedAddress = [hintName, hintAddress, district].filter(Boolean).join(', ');
+        } else {
+          formattedAddress = `${district}, ${city}`;
+        }
       }
     } catch (err: any) {
-      this.logger.warn(`⚠️ Nominatim API no disponible (${err.message}). Usando fallback por coordenadas.`);
-      
-      if (latitude > -12.05 && latitude < -11.85) {
-        district = 'Los Olivos';
-      } else if (latitude < -12.15 && latitude > -12.35) {
-        district = 'Villa El Salvador';
-      } else if (longitude < -77.10) {
-        district = 'Callao';
-      } else {
-        district = 'Miraflores';
+      this.logger.warn(`⚠️ Nominatim API no disponible (${err.message}). Usando cálculo por coordenadas.`);
+
+      if (!district || district === 'Lima') {
+        if (latitude > -12.05 && latitude < -11.85) {
+          district = 'Los Olivos';
+        } else if (latitude < -12.15 && latitude > -12.35) {
+          district = 'Villa El Salvador';
+        } else if (longitude < -77.10) {
+          district = 'Callao';
+        } else {
+          district = 'Miraflores';
+        }
       }
-      formattedAddress = `${district}, Lima (Ubicación GPS)`;
+      formattedAddress = hintAddress || `${district}, Lima (Ubicación GPS)`;
     }
 
     const { zone, deliveryFee } = this.calculateDelivery('HOME_DELIVERY', district);

@@ -18,7 +18,7 @@ import { LayoutService } from '../../core/services/layout.service';
 
       <!-- Main Content Area -->
       <div class="flex-1 ml-0 lg:ml-64 min-h-screen flex flex-col w-full min-w-0 transition-all duration-300">
-        <main class="flex-1 p-3 sm:p-5 md:p-8 max-w-7xl w-full mx-auto">
+        <main class="flex-1 p-3 sm:p-5 md:p-8 max-w-auto w-full mx-auto">
           <router-outlet></router-outlet>
         </main>
       </div>

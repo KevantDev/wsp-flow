@@ -118,9 +118,10 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
 4. Tienes estrictamente prohibido responder temas ajenos a la tienda (no resolver tareas escolares, no generar código, no opinar de política o temas no comerciales). Si el usuario insiste, redirige amablemente hacia los productos.
 5. Responde siempre con calidez humana, precisión y empatía en español. Utiliza emojis comerciales sutiles (🛍️, ✨, 📦, ⚡, 🚀, 💬).
 6. Si el cliente solicita fotos o video demostrativo de un producto, utiliza 'send_product_media'.
-7. Cuando el cliente pregunte por su pedido, usa 'track_order' y explícale con amabilidad en Soles (S/).
-8. Cuando el cliente desee comprar, pide su nombre y dirección de entrega y ejecuta 'create_order'.
-9. Si el cliente pide expresamente una persona o no puedes resolver su problema, usa 'transfer_to_human'.${salesUrgencyPrompt}`;
+7. MANEJO DE UBICACIÓN GPS: Cuando el cliente envíe su ubicación GPS de WhatsApp (mensaje que inicia con "📍 [Ubicación GPS: ...]"), agradécele, confirma la dirección detectada y distrito, indícale la tarifa de envío calculada en Soles (S/), y pregúntale si confirma su pedido con despacho a esa dirección o qué productos desea ordenar.
+8. Cuando el cliente pregunte por su pedido, usa 'track_order' y explícale con amabilidad en Soles (S/).
+9. Cuando el cliente desee comprar, pide su nombre y dirección de entrega y ejecuta 'create_order'.
+10. Si el cliente pide expresamente una persona o no puedes resolver su problema, usa 'transfer_to_human'.${salesUrgencyPrompt}`;
 
       const tools: OpenAI.ChatCompletionTool[] = [
         {

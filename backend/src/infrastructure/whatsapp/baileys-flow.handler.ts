@@ -189,7 +189,27 @@ export class BaileysFlowHandler {
     }
 
     // =========================================================================
-    // 5. MOTOR PRINCIPAL DE IA: OpenAI GPT-5.6-luna con Function Calling & Memoria
+    // 5. FAST-PATH 0 TOKENS: Ubicación GPS Compartida (Modo Offline)
+    // =========================================================================
+    if (!this.aiService.isAvailable() && (rawText.startsWith('📍 [Ubicación GPS:') || rawText.includes('Ubicación GPS:'))) {
+      const match = rawText.match(/Ubicación GPS:\s*([^|\]]+)(?:\|\s*Distrito:\s*([^|\]]+))?(?:\|\s*Tarifa Delivery:\s*([^|\]]+))?/i);
+      const address = match ? match[1].trim() : 'tu dirección';
+      const district = match && match[2] ? match[2].trim() : 'Lima';
+      const fee = match && match[3] ? match[3].trim() : 'S/ 10.00';
+
+      return {
+        replyText:
+          `📍 *¡Ubicación GPS Recibida con Éxito!*\n\n` +
+          `• *Dirección:* ${address}\n` +
+          `• *Distrito:* ${district}\n` +
+          `• *Costo de Delivery:* ${fee} PEN\n\n` +
+          `¿Deseas que preparemos un pedido para despacho a esta dirección? Dime qué productos deseas ordenar o escribe *catalogo* para ver las opciones. ✨`,
+        actionTaken: 'GPS_LOCATION_RECEIVED',
+      };
+    }
+
+    // =========================================================================
+    // 6. MOTOR PRINCIPAL DE IA: OpenAI GPT-5.6-luna con Function Calling & Memoria
     // =========================================================================
     if (this.aiService.isAvailable()) {
       this.logger.log(`🧠 Procesando con OpenAI GPT-5.6-luna y Function Calling...`);

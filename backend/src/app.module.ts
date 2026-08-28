@@ -18,6 +18,7 @@ import { BaileysService } from './infrastructure/whatsapp/baileys.service';
 import { BaileysFlowHandler } from './infrastructure/whatsapp/baileys-flow.handler';
 import { AiService } from './infrastructure/ai/ai.service';
 import { CatalogPdfService } from './infrastructure/pdf/catalog-pdf.service';
+import { ReceiptPdfService } from './infrastructure/pdf/receipt-pdf.service';
 import { CulqiService } from './infrastructure/payments/culqi.service';
 
 // Application Services
@@ -94,6 +95,7 @@ import { RolesGuard } from './core/guards/roles.guard';
     WhatsAppGateway,
     AiService,
     CatalogPdfService,
+    ReceiptPdfService,
     CulqiService,
 
     // Services

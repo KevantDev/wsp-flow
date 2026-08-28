@@ -5,6 +5,7 @@ import { CreateOrderDto, UpdateOrderStatusDto } from '../dtos/order.dto';
 import { OrderStatus, OrderSource } from '../../domain/entities/order.entity';
 import { WhatsAppGateway } from '../../presentation/gateways/whatsapp.gateway';
 import { BaileysService } from '../../infrastructure/whatsapp/baileys.service';
+import { ReceiptPdfService } from '../../infrastructure/pdf/receipt-pdf.service';
 
 @Injectable()
 export class OrdersService {
@@ -13,6 +14,7 @@ export class OrdersService {
     private readonly productRepo: PrismaProductRepository,
     private readonly wsGateway: WhatsAppGateway,
     private readonly baileysService: BaileysService,
+    private readonly receiptPdfService: ReceiptPdfService,
   ) {}
 
   async getAll(status?: OrderStatus, customerPhone?: string) {
@@ -261,5 +263,16 @@ export class OrdersService {
 
   async getMetrics() {
     return this.orderRepo.getMetrics();
+  }
+
+  async generateReceiptPdf(idOrOrderNumber: string) {
+    let order = await this.orderRepo.findByOrderNumber(idOrOrderNumber.trim().toUpperCase());
+    if (!order) {
+      order = await this.orderRepo.findById(idOrOrderNumber);
+    }
+    if (!order) {
+      throw new NotFoundException('Orden no encontrada');
+    }
+    return this.receiptPdfService.generateReceiptPdf(order);
   }
 }

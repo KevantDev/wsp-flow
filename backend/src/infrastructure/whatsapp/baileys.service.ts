@@ -174,10 +174,16 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
               const locResult = await this.deliveryService.resolveLocationFromCoords(
                 location.degreesLatitude,
                 location.degreesLongitude,
+                (location as any).address || undefined,
+                (location as any).name || undefined,
               );
               textContent = `📍 [Ubicación GPS: ${locResult.formattedAddress} | Distrito: ${locResult.district} | Tarifa Delivery: S/ ${locResult.deliveryFee.toFixed(2)}]`;
             } catch (e) {
-              textContent = `📍 [Ubicación GPS: Lat ${location.degreesLatitude}, Lng ${location.degreesLongitude}]`;
+              const fallbackAddr =
+                (location as any).name || (location as any).address
+                  ? `${(location as any).name || ''} ${(location as any).address || ''}`.trim()
+                  : `Lat ${location.degreesLatitude}, Lng ${location.degreesLongitude}`;
+              textContent = `📍 [Ubicación GPS: ${fallbackAddr}]`;
             }
           }
 

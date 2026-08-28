@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { OrdersService } from '../../application/services/orders.service';
 import { CreateOrderDto, UpdateOrderStatusDto } from '../../application/dtos/order.dto';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
@@ -17,6 +18,24 @@ export class OrdersController {
   @Get('metrics')
   async getMetrics() {
     return this.ordersService.getMetrics();
+  }
+
+  /**
+   * Descarga de Boleta de Venta Electrónica oficial en formato PDF
+   */
+  @Public()
+  @Get(':idOrOrderNumber/receipt-pdf')
+  async getReceiptPdf(
+    @Param('idOrOrderNumber') idOrOrderNumber: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.ordersService.generateReceiptPdf(idOrOrderNumber);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get(':id')

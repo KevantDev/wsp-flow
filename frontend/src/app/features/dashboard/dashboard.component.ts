@@ -328,7 +328,7 @@ import { DashboardMetrics, SessionStatus, WhatsAppStatus } from '../../core/mode
                       </span>
                     }
                   </td>
-                  <td class="py-3 px-4 font-bold text-zinc-900 font-mono">&#36;{{ order.total | number: '1.2-2' }}</td>
+                  <td class="py-3 px-4 font-bold text-zinc-900 font-mono">S/ {{ order.total | number: '1.2-2' }}</td>
                   <td class="py-3 px-4">
                     <app-badge [variant]="getOrderBadgeVariant(order.status)">
                       {{ order.status }}
