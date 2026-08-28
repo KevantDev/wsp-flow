@@ -465,13 +465,31 @@ export class ProductsComponent implements OnInit {
 
   loadData() {
     this.productsService.getCategories().subscribe({
-      next: (cats) => this.categories.set(cats),
+      next: (cats: any) =>
+        this.categories.set(
+          Array.isArray(cats)
+            ? cats
+            : cats?.categories && Array.isArray(cats.categories)
+            ? cats.categories
+            : [],
+        ),
+      error: () => this.categories.set([]),
     });
 
     this.productsService.getProducts().subscribe({
-      next: (prods) => {
-        this.products.set(prods);
+      next: (prods: any) => {
+        this.products.set(
+          Array.isArray(prods)
+            ? prods
+            : prods?.products && Array.isArray(prods.products)
+            ? prods.products
+            : [],
+        );
         this.filterProducts();
+      },
+      error: () => {
+        this.products.set([]);
+        this.filteredProducts.set([]);
       },
     });
   }
@@ -482,7 +500,7 @@ export class ProductsComponent implements OnInit {
   }
 
   filterProducts() {
-    let result = this.products();
+    let result = Array.isArray(this.products()) ? this.products() : [];
 
     if (this.selectedCategory()) {
       result = result.filter((p) => p.categoryId === this.selectedCategory());

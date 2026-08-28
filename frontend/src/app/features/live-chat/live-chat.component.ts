@@ -480,11 +480,16 @@ export class LiveChatComponent implements OnInit, OnDestroy {
 
   loadSessions(autoSelectId?: string) {
     this.chatService.getSessions().subscribe({
-      next: (data) => {
-        this.sessions.set(data);
+      next: (data: any) => {
+        const list: ChatSession[] = Array.isArray(data)
+          ? data
+          : data?.sessions && Array.isArray(data.sessions)
+          ? data.sessions
+          : [];
+        this.sessions.set(list);
 
         if (autoSelectId) {
-          const target = data.find((s) => s.id === autoSelectId);
+          const target = list.find((s) => s.id === autoSelectId);
           if (target) {
             this.selectSession(target);
             return;
@@ -493,24 +498,30 @@ export class LiveChatComponent implements OnInit, OnDestroy {
 
         const currentActive = this.activeSession();
         if (currentActive) {
-          const updated = data.find((s) => s.id === currentActive.id);
+          const updated = list.find((s) => s.id === currentActive.id);
           if (updated) {
             this.activeSession.set(updated);
           }
-        } else if (data.length > 0 && !this.isMobileView()) {
-          this.selectSession(data[0]);
+        } else if (list.length > 0 && !this.isMobileView()) {
+          this.selectSession(list[0]);
         }
+      },
+      error: (err) => {
+        console.error('Error cargando sesiones:', err);
+        this.sessions.set([]);
       },
     });
   }
 
   filteredSessions(): ChatSession[] {
-    if (!this.searchQuery.trim()) return this.sessions();
+    const list = Array.isArray(this.sessions()) ? this.sessions() : [];
+    if (!this.searchQuery.trim()) return list;
     const q = this.searchQuery.toLowerCase();
-    return this.sessions().filter(
+    return list.filter(
       (s) =>
-        s.customerPhone.includes(q) ||
-        (s.customerName && s.customerName.toLowerCase().includes(q)),
+        s &&
+        ((s.customerPhone && s.customerPhone.includes(q)) ||
+          (s.customerName && s.customerName.toLowerCase().includes(q))),
     );
   }
 
@@ -528,11 +539,20 @@ export class LiveChatComponent implements OnInit, OnDestroy {
 
   loadInitialMessages(sessionId: string) {
     this.chatService.getSessionMessages(sessionId, 30, 0).subscribe({
-      next: (res: PaginatedMessagesResponse) => {
-        this.messages.set(res.messages || []);
-        this.hasMoreMessages.set(res.hasMore || false);
-        this.totalMessages.set(res.total || (res.messages ? res.messages.length : 0));
+      next: (res: any) => {
+        const msgsList: ChatMessage[] = Array.isArray(res)
+          ? res
+          : res?.messages && Array.isArray(res.messages)
+          ? res.messages
+          : [];
+        this.messages.set(msgsList);
+        this.hasMoreMessages.set(Boolean(res?.hasMore));
+        this.totalMessages.set(res?.total || msgsList.length);
         this.scrollToBottom('instant');
+      },
+      error: (err) => {
+        console.error('Error cargando mensajes:', err);
+        this.messages.set([]);
       },
     });
   }
@@ -545,13 +565,21 @@ export class LiveChatComponent implements OnInit, OnDestroy {
     const container = this.scrollContainer?.nativeElement;
     const oldScrollHeight = container ? container.scrollHeight : 0;
     const oldScrollTop = container ? container.scrollTop : 0;
-    const currentOffset = this.messages().length;
+    const currentOffset = Array.isArray(this.messages()) ? this.messages().length : 0;
 
     this.chatService.getSessionMessages(session.id, 30, currentOffset).subscribe({
-      next: (res: PaginatedMessagesResponse) => {
-        this.messages.update((curr) => [...(res.messages || []), ...curr]);
-        this.hasMoreMessages.set(res.hasMore || false);
-        this.totalMessages.set(res.total || 0);
+      next: (res: any) => {
+        const msgsList: ChatMessage[] = Array.isArray(res)
+          ? res
+          : res?.messages && Array.isArray(res.messages)
+          ? res.messages
+          : [];
+        this.messages.update((curr) => [
+          ...msgsList,
+          ...(Array.isArray(curr) ? curr : []),
+        ]);
+        this.hasMoreMessages.set(Boolean(res?.hasMore));
+        this.totalMessages.set(res?.total || 0);
         this.isLoadingMore.set(false);
 
         // Preserve scroll position without visual jumping

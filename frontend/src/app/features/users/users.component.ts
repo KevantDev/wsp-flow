@@ -169,7 +169,15 @@ export class UsersComponent implements OnInit {
 
   loadUsers() {
     this.usersService.getUsers().subscribe({
-      next: (data) => this.users.set(data),
+      next: (data: any) =>
+        this.users.set(
+          Array.isArray(data)
+            ? data
+            : data?.users && Array.isArray(data.users)
+            ? data.users
+            : [],
+        ),
+      error: () => this.users.set([]),
     });
   }
 

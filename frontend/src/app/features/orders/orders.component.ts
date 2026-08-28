@@ -409,14 +409,24 @@ export class OrdersComponent implements OnInit {
 
   loadOrders() {
     this.ordersService.getOrders().subscribe({
-      next: (data) => {
-        this.orders.set(data);
+      next: (data: any) => {
+        const list = Array.isArray(data)
+          ? data
+          : data?.orders && Array.isArray(data.orders)
+          ? data.orders
+          : [];
+        this.orders.set(list);
+      },
+      error: (err) => {
+        console.error('Error cargando pedidos:', err);
+        this.orders.set([]);
       },
     });
   }
 
   getOrdersByStatuses(statuses: (OrderStatus | string)[]): Order[] {
-    return this.orders().filter((o) => statuses.includes(o.status as any));
+    const list = Array.isArray(this.orders()) ? this.orders() : [];
+    return list.filter((o) => o && statuses.includes(o.status as any));
   }
 
   onStatusChange(order: Order, newStatus: OrderStatus) {
