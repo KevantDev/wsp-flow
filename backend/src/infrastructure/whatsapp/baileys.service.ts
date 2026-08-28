@@ -401,15 +401,25 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private formatWhatsAppText(text: string): string {
+    if (!text) return '';
+    return text
+      // Convert standard markdown bold **bold** to WhatsApp *bold*
+      .replace(/\*\*(.*?)\*\*/g, '*$1*')
+      // Convert stray dollar signs $99.00 to Peruvian Soles S/ 99.00
+      .replace(/\$(\s*\d+(\.\d+)?)/g, 'S/ $1');
+  }
+
   async sendManualMessage(customerPhone: string, text: string, senderName = 'Agente'): Promise<any> {
     const formattedPhone = customerPhone.replace(/\D/g, '');
     const remoteJid = `${formattedPhone}@s.whatsapp.net`;
+    const cleanText = this.formatWhatsAppText(text);
 
     const chatSession = await this.chatRepo.findOrCreateSession(formattedPhone);
 
     if (this.socket && this.connectionStatus === SessionStatus.CONNECTED) {
       try {
-        await this.socket.sendMessage(remoteJid, { text });
+        await this.socket.sendMessage(remoteJid, { text: cleanText });
         this.logger.log(`📤 Mensaje manual enviado por WhatsApp a [${formattedPhone}]`);
       } catch (err: any) {
         this.logger.error(`Error enviando mensaje WhatsApp a ${formattedPhone}: ${err.message}`);
@@ -420,7 +430,7 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
       chatSessionId: chatSession.id,
       sender: MessageSender.AGENT,
       senderName,
-      content: text,
+      content: cleanText,
     });
 
     this.wsGateway.emitNewChatMessage({
@@ -434,13 +444,14 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
 
   private async sendMessageDirect(remoteJid: string, text: string, sender: MessageSender, chatSessionId: string) {
     if (!this.socket) return;
-    await this.socket.sendMessage(remoteJid, { text });
+    const cleanText = this.formatWhatsAppText(text);
+    await this.socket.sendMessage(remoteJid, { text: cleanText });
 
     const savedMsg = await this.chatRepo.saveMessage({
       chatSessionId,
       sender,
       senderName: sender === MessageSender.BOT ? 'Bot WSP' : 'Agente',
-      content: text,
+      content: cleanText,
     });
 
     const phone = remoteJid.replace('@s.whatsapp.net', '');

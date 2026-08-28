@@ -254,7 +254,7 @@ import { ChatSession, ChatMessage, MessageSender } from '../../core/models/model
                   </div>
 
                   <!-- Text Content -->
-                  <p class="text-xs leading-relaxed whitespace-pre-wrap font-sans break-words">{{ msg.content }}</p>
+                  <div class="text-xs leading-relaxed font-sans break-words msg-bubble-content" [innerHTML]="formatMessageContent(msg.content)"></div>
                 </div>
 
               </div>
@@ -754,5 +754,45 @@ export class LiveChatComponent implements OnInit, OnDestroy {
       default:
         return 'bg-zinc-100 border border-zinc-200 text-zinc-900';
     }
+  }
+
+  formatMessageContent(raw: string): string {
+    if (!raw) return '';
+
+    // 1. Escapar HTML para evitar XSS
+    let text = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 2. Enlaces URL a links interactivos estilizados
+    const urlPattern = /(https?:\/\/[^\s]+)/g;
+    text = text.replace(urlPattern, (url) => {
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="underline font-semibold text-indigo-600 hover:text-indigo-800 transition-colors inline-flex items-center gap-0.5">${url}</a>`;
+    });
+
+    // 3. Negritas: **texto** y *texto* a <strong>
+    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
+
+    // 4. Cursivas: _texto_ a <em>
+    text = text.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+
+    // 5. Tachado: ~texto~ a <del>
+    text = text.replace(/~([^~\n]+)~/g, '<del class="opacity-75">$1</del>');
+
+    // 6. Código en línea: `código` a <code>
+    text = text.replace(
+      /`([^`\n]+)`/g,
+      '<code class="px-1.5 py-0.5 rounded bg-zinc-200/70 font-mono text-[11px] font-bold text-zinc-900">$1</code>',
+    );
+
+    // 7. Corrección de signos de dólar accidentales a Soles
+    text = text.replace(/\$(\s*\d+(\.\d+)?)/g, 'S/ $1');
+
+    // 8. Saltos de línea
+    text = text.replace(/\n/g, '<br>');
+
+    return text;
   }
 }

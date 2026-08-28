@@ -111,13 +111,16 @@ DATOS OFICIALES DE LA EMPRESA:
 CATÁLOGO DISPONIBLE EN INVENTARIO (${productsSummary.length} productos):
 ${JSON.stringify(productsSummary, null, 1)}
 
-REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
+REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
 1. Eres exclusivamente la asesora comercial de ventas de ${config.companyName}.
-2. Tienes estrictamente prohibido responder temas ajenos a la tienda (no resolver tareas escolares, no generar código, no opinar de política o temas no comerciales). Si el usuario insiste, redirige amablemente hacia los productos.
-3. Responde siempre con calidez humana, precisión y empatía en español. Utiliza emojis comerciales sutiles (🛍️, ✨, 📦, ⚡, 🚀, 💬).
-4. Si el cliente solicita fotos o video demostrativo de un producto, utiliza 'send_product_media'.
-5. Cuando el cliente desee comprar, pide su nombre y dirección de entrega y ejecuta 'create_order'.
-6. Si el cliente pide expresamente una persona o no puedes resolver su problema, usa 'transfer_to_human'.${salesUrgencyPrompt}`;
+2. MONEDA OFICIAL: Todos los precios, subtotales y totales son exclusivamente en SOLES PERUANOS (S/ PEN). Queda TERMINANTEMENTE PROHIBIDO usar el signo de dólar ($). Siempre escribe "S/ 79.90", "S/ 149.00", etc.
+3. FORMATO WHATSAPP: Para resaltar palabras usa el formato oficial de WhatsApp con UN SOLO asterisco (*texto en negrita*). NUNCA uses dobles asteriscos (**texto**), ni títulos markdown (###).
+4. Tienes estrictamente prohibido responder temas ajenos a la tienda (no resolver tareas escolares, no generar código, no opinar de política o temas no comerciales). Si el usuario insiste, redirige amablemente hacia los productos.
+5. Responde siempre con calidez humana, precisión y empatía en español. Utiliza emojis comerciales sutiles (🛍️, ✨, 📦, ⚡, 🚀, 💬).
+6. Si el cliente solicita fotos o video demostrativo de un producto, utiliza 'send_product_media'.
+7. Cuando el cliente pregunte por su pedido, usa 'track_order' y explícale con amabilidad en Soles (S/).
+8. Cuando el cliente desee comprar, pide su nombre y dirección de entrega y ejecuta 'create_order'.
+9. Si el cliente pide expresamente una persona o no puedes resolver su problema, usa 'transfer_to_human'.${salesUrgencyPrompt}`;
 
       const tools: OpenAI.ChatCompletionTool[] = [
         {
@@ -411,11 +414,21 @@ REGLAS INVIOLABLES DE SEGURIDAD & ENFOQUE COMERCIAL (SHIELDING):
         responseMessage = response.choices[0].message;
       }
 
+      const rawReply =
+        responseMessage.content || '¡Hola! ¿En qué más te puedo asesorar sobre nuestros productos?';
+      const cleanReply = rawReply
+        .replace(/\*\*(.*?)\*\*/g, '*$1*')
+        .replace(/\$(\s*\d+(\.\d+)?)/g, 'S/ $1');
+
       return {
-        replyText: responseMessage.content || '¡Hola! ¿En qué más te puedo asesorar sobre nuestros productos?',
+        replyText: cleanReply,
         mediaUrl: mediaToDispatch?.mediaUrl,
         mediaType: mediaToDispatch?.mediaType,
-        caption: mediaToDispatch?.caption,
+        caption: mediaToDispatch?.caption
+          ? mediaToDispatch.caption
+              .replace(/\*\*(.*?)\*\*/g, '*$1*')
+              .replace(/\$(\s*\d+(\.\d+)?)/g, 'S/ $1')
+          : undefined,
       };
     } catch (error: any) {
       this.logger.error(`Error en OpenAI AI Service: ${error.message}`);
