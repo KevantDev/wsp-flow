@@ -5,6 +5,7 @@ import { NavbarComponent } from '../../shared/components/navbar/navbar.component
 import { BentoCardComponent } from '../../shared/components/bento-card/bento-card.component';
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { UsersService } from '../../core/services/users.service';
+import { ToastService } from '../../core/services/toast.service';
 import { User } from '../../core/models/models';
 
 @Component({
@@ -152,6 +153,7 @@ import { User } from '../../core/models/models';
 })
 export class UsersComponent implements OnInit {
   private usersService = inject(UsersService);
+  private toast = inject(ToastService);
 
   users = signal<User[]>([]);
   isModalOpen = signal(false);
@@ -206,14 +208,31 @@ export class UsersComponent implements OnInit {
         this.users.update((list) =>
           list.map((u) => (u.id === updated.id ? { ...u, isActive: updated.isActive } : u)),
         );
+        this.toast.success(`Usuario ${updated.isActive ? 'activado' : 'desactivado'} exitosamente.`);
+      },
+      error: (err) => {
+        this.toast.error(err.error?.message || 'Error al cambiar estado del usuario.');
       },
     });
   }
 
-  deleteUser(user: User) {
-    if (confirm(`¿Estás seguro de eliminar a "${user.fullName}"?`)) {
+  async deleteUser(user: User) {
+    const confirmed = await this.toast.confirm({
+      title: 'Eliminar Usuario',
+      message: `¿Estás seguro de eliminar a "${user.fullName}" del equipo? Esta acción no se puede deshacer.`,
+      confirmText: 'Sí, Eliminar',
+      type: 'danger',
+    });
+
+    if (confirmed) {
       this.usersService.deleteUser(user.id).subscribe({
-        next: () => this.loadUsers(),
+        next: () => {
+          this.toast.success(`Usuario "${user.fullName}" eliminado con éxito.`);
+          this.loadUsers();
+        },
+        error: (err) => {
+          this.toast.error(err.error?.message || 'Error al eliminar usuario.');
+        },
       });
     }
   }

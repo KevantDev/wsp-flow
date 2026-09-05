@@ -35,6 +35,7 @@ export class BaileysFlowHandler {
   ) {}
 
   async handleIncomingMessage(
+    tenantId: string,
     customerPhone: string,
     customerName: string,
     messageText: string,
@@ -43,7 +44,7 @@ export class BaileysFlowHandler {
     const rawText = messageText.trim();
     const cleanText = rawText.toLowerCase().replace(/[.,!¡?¿]/g, '').trim();
 
-    this.logger.log(`🤖 Mensaje consolidado de [${customerPhone}]: "${rawText}"`);
+    this.logger.log(`🤖 [Tenant: ${tenantId}] Mensaje consolidado de [${customerPhone}]: "${rawText}"`);
 
     // =========================================================================
     // 1. FAST-PATH 0 TOKENS: Cortesías, Agradecimientos y Despedidas
@@ -86,7 +87,7 @@ export class BaileysFlowHandler {
       cleanText.includes('hablar con asesor') ||
       cleanText.includes('atencion humana')
     ) {
-      await this.chatRepo.toggleBot(customerPhone, false);
+      await this.chatRepo.toggleBot(tenantId, customerPhone, false);
       return {
         replyText:
           '👨‍💼 *Atención con Asesor Humano Activada*\n\nHe pausado mis respuestas automáticas para este chat. Uno de nuestros asesores de ventas revisará tu conversación y te responderá a la brevedad.\n\n_Para reactivarme en cualquier momento, escribe *bot*._',
@@ -96,28 +97,39 @@ export class BaileysFlowHandler {
 
     // Reactivación del Bot
     if (cleanText === 'bot' || cleanText === 'activar bot' || cleanText === 'menu') {
-      await this.chatRepo.toggleBot(customerPhone, true);
+      await this.chatRepo.toggleBot(tenantId, customerPhone, true);
     }
 
     // =========================================================================
-    // 3. FAST-PATH 0 TOKENS: Solicitud Explícita de Catálogo en PDF
+    // 3. FAST-PATH 0 TOKENS: Solicitud de Catálogo en PDF
     // =========================================================================
-    if (
+    const isCatalogRequest =
       cleanText === 'catalogo' ||
       cleanText === 'catálogo' ||
-      cleanText === 'catalogo pdf' ||
-      cleanText === 'catálogo pdf' ||
-      cleanText === 'ver catalogo' ||
-      cleanText === 'ver catálogo' ||
-      cleanText === 'enviar catalogo' ||
-      cleanText === 'enviar catálogo'
-    ) {
+      cleanText.includes('catalogo') ||
+      cleanText.includes('catálogo') ||
+      cleanText.includes('lista de precio') ||
+      cleanText.includes('lista de productos') ||
+      cleanText.includes('folleto') ||
+      cleanText.includes('brochure') ||
+      cleanText.includes('ver productos') ||
+      cleanText.includes('pasa el catalogo') ||
+      cleanText.includes('pasar el catalogo') ||
+      cleanText.includes('enviar el catalogo') ||
+      cleanText.includes('mandar el catalogo');
+
+    const isDirectOrderCommand =
+      cleanText.startsWith('pedir') ||
+      cleanText.startsWith('comprar') ||
+      cleanText.startsWith('ordenar');
+
+    if (isCatalogRequest && !isDirectOrderCommand) {
       try {
-        const { filePath } = await this.catalogPdfService.generateCatalogPdf();
+        const { filePath } = await this.catalogPdfService.generateCatalogPdf(tenantId);
         return {
-          replyText: `📄 *¡Aquí tienes nuestro Catálogo Oficial de Productos en PDF!* ✨\n\nIncluye fotos, precios, códigos SKU y stock actualizado.\n\n🛒 *¿Cómo comprar?*\n• Escribe el código del producto (ej: *pedir #01* o *comprar 2 PROD-01*)\n• O escribe *asesor* para hablar con nuestro equipo.`,
+          replyText: `📄 *¡Aquí tienes nuestro Catálogo Oficial de Productos en PDF!* ✨\n\nIncluye fotos en alta definición, precios en Soles (S/), códigos SKU y stock actualizado en tiempo real.\n\n🛒 *¿Cómo comprar?*\n• Escribe el nombre o código SKU del producto (ej: *pedir PROD-01*)\n• O escribe *asesor* para hablar con nuestro equipo de ventas.`,
           documentPath: filePath,
-          documentFileName: 'Catalogo_WSP_Flow.pdf',
+          documentFileName: 'Catalogo_Productos.pdf',
           actionTaken: 'SENT_CATALOG_PDF',
         };
       } catch (err: any) {
@@ -144,11 +156,15 @@ export class BaileysFlowHandler {
       const orderMatch = rawText.match(/ORD-[\d-]+/i);
       let order = null;
       if (orderMatch) {
-        order = await this.orderRepo.findByOrderNumber(orderMatch[0].toUpperCase());
+        order = await this.orderRepo.findByOrderNumber(orderMatch[0].toUpperCase(), tenantId);
       }
       if (!order) {
-        const cleanP = customerPhone.replace(/\D/g, '');
-        const list = await this.orderRepo.findAll({ customerPhone: cleanP, limit: 1 });
+        const list = await this.orderRepo.findAll({
+          tenantId,
+          chatSessionId,
+          customerPhone,
+          limit: 1,
+        });
         if (list && list.length > 0) {
           order = list[0];
         }
@@ -189,31 +205,12 @@ export class BaileysFlowHandler {
     }
 
     // =========================================================================
-    // 5. FAST-PATH 0 TOKENS: Ubicación GPS Compartida (Modo Offline)
-    // =========================================================================
-    if (!this.aiService.isAvailable() && (rawText.startsWith('📍 [Ubicación GPS:') || rawText.includes('Ubicación GPS:'))) {
-      const match = rawText.match(/Ubicación GPS:\s*([^|\]]+)(?:\|\s*Distrito:\s*([^|\]]+))?(?:\|\s*Tarifa Delivery:\s*([^|\]]+))?/i);
-      const address = match ? match[1].trim() : 'tu dirección';
-      const district = match && match[2] ? match[2].trim() : 'Lima';
-      const fee = match && match[3] ? match[3].trim() : 'S/ 10.00';
-
-      return {
-        replyText:
-          `📍 *¡Ubicación GPS Recibida con Éxito!*\n\n` +
-          `• *Dirección:* ${address}\n` +
-          `• *Distrito:* ${district}\n` +
-          `• *Costo de Delivery:* ${fee} PEN\n\n` +
-          `¿Deseas que preparemos un pedido para despacho a esta dirección? Dime qué productos deseas ordenar o escribe *catalogo* para ver las opciones. ✨`,
-        actionTaken: 'GPS_LOCATION_RECEIVED',
-      };
-    }
-
-    // =========================================================================
-    // 6. MOTOR PRINCIPAL DE IA: OpenAI GPT-5.6-luna con Function Calling & Memoria
+    // 5. MOTOR PRINCIPAL DE IA: OpenAI GPT con Function Calling & Memoria
     // =========================================================================
     if (this.aiService.isAvailable()) {
-      this.logger.log(`🧠 Procesando con OpenAI GPT-5.6-luna y Function Calling...`);
+      this.logger.log(`🧠 [Tenant: ${tenantId}] Procesando con OpenAI AI y Function Calling...`);
       const aiResult = await this.aiService.processWhatsAppMessage(
+        tenantId,
         customerPhone,
         customerName,
         rawText,
@@ -224,12 +221,14 @@ export class BaileysFlowHandler {
         mediaUrl: aiResult.mediaUrl,
         mediaType: aiResult.mediaType,
         caption: aiResult.caption,
-        actionTaken: 'OPENAI_GPT_LUNA',
+        documentPath: aiResult.documentPath,
+        documentFileName: aiResult.documentFileName,
+        actionTaken: 'OPENAI_GPT',
       };
     }
 
     // =========================================================================
-    // 5. MODO DETERMINÍSTICO DE RESPALDO OFFLINE (Sin OpenAI API Key)
+    // 6. MODO DETERMINÍSTICO DE RESPALDO OFFLINE (Sin OpenAI API Key)
     // =========================================================================
 
     // Saludo inicial
@@ -241,15 +240,15 @@ export class BaileysFlowHandler {
       cleanText === 'buenas noches'
     ) {
       try {
-        const { filePath } = await this.catalogPdfService.generateCatalogPdf();
+        const { filePath } = await this.catalogPdfService.generateCatalogPdf(tenantId);
         return {
           replyText: `👋 ¡Hola ${customerName}! Bienvenido a nuestra tienda. Te adjunto nuestro Catálogo Oficial en PDF. Revisa los productos y dime qué te gustaría ordenar.`,
           documentPath: filePath,
-          documentFileName: 'Catalogo_WSP_Flow.pdf',
+          documentFileName: 'Catalogo_Productos.pdf',
           actionTaken: 'SENT_CATALOG_PDF',
         };
       } catch {
-        const products = await this.productRepo.findAll({ onlyAvailable: true });
+        const products = await this.productRepo.findAll({ tenantId, onlyAvailable: true });
         return {
           replyText: `👋 ¡Hola ${customerName}! Bienvenido a nuestra tienda. Tenemos ${products.length} productos disponibles. Escribe *catalogo* para recibir el PDF o escribe *asesor* para ser atendido.`,
         };
@@ -264,7 +263,7 @@ export class BaileysFlowHandler {
       cleanText.startsWith('quiero');
 
     if (isOrderIntent) {
-      const products = await this.productRepo.findAll({ onlyAvailable: true });
+      const products = await this.productRepo.findAll({ tenantId, onlyAvailable: true });
       let selectedProduct = null;
       let quantity = 1;
 
@@ -296,6 +295,8 @@ export class BaileysFlowHandler {
 
         const newOrder = await this.orderRepo.create(
           {
+            tenantId,
+            chatSessionId,
             customerName,
             customerPhone,
             status: OrderStatus.PENDING,
@@ -303,7 +304,8 @@ export class BaileysFlowHandler {
             subtotal,
             deliveryFee: 0,
             total,
-            notes: `Orden creada automáticamente vía WhatsApp`,
+            paymentMethod: 'CASH_ON_DELIVERY' as any,
+            notes: `Orden creada automáticamente vía WhatsApp (modo offline)`,
           },
           [
             {

@@ -13,6 +13,8 @@ import { PrismaChatRepository } from './infrastructure/persistence/prisma/reposi
 import { PrismaWhatsAppSessionRepository } from './infrastructure/persistence/prisma/repositories/prisma-whatsapp-session.repository';
 import { PrismaCompanyConfigRepository } from './infrastructure/persistence/prisma/repositories/prisma-company-config.repository';
 
+import { PrismaBroadcastRepository } from './infrastructure/persistence/prisma/repositories/prisma-broadcast.repository';
+
 // Infrastructure - WhatsApp Engine & Payments
 import { BaileysService } from './infrastructure/whatsapp/baileys.service';
 import { BaileysFlowHandler } from './infrastructure/whatsapp/baileys-flow.handler';
@@ -31,6 +33,8 @@ import { UsersService } from './application/services/users.service';
 import { DashboardService } from './application/services/dashboard.service';
 import { CompanyConfigService } from './application/services/company-config.service';
 import { DeliveryService } from './application/services/delivery.service';
+import { OrderRecoveryService } from './application/services/order-recovery.service';
+import { BroadcastService } from './application/services/broadcast.service';
 
 // Presentation - Gateways & Controllers
 import { WhatsAppGateway } from './presentation/gateways/whatsapp.gateway';
@@ -46,14 +50,26 @@ import { DashboardController } from './presentation/controllers/dashboard.contro
 import { UploadController } from './presentation/controllers/upload.controller';
 import { CompanyConfigController } from './presentation/controllers/company-config.controller';
 import { PaymentsController } from './presentation/controllers/payments.controller';
+import { BroadcastController } from './presentation/controllers/broadcast.controller';
 
 // Core Security
 import { JwtStrategy } from './core/strategies/jwt.strategy';
 import { JwtAuthGuard } from './core/guards/jwt-auth.guard';
 import { RolesGuard } from './core/guards/roles.guard';
 
+import { PrismaTenantRepository } from './infrastructure/persistence/prisma/repositories/prisma-tenant.repository';
+import { PrismaPlanRepository } from './infrastructure/persistence/prisma/repositories/prisma-plan.repository';
+import { TenantsService } from './application/services/tenants.service';
+import { PlansService } from './application/services/plans.service';
+import { TenantsController } from './presentation/controllers/tenants.controller';
+import { PlansController } from './presentation/controllers/plans.controller';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { OrderEventsListener } from './application/listeners/order-events.listener';
+import { MercadoPagoService } from './infrastructure/payments/mercadopago.service';
+
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: process.env.JWT_ACCESS_SECRET || 'wsp_flow_super_secret_jwt_access_key_2026_x99',
@@ -63,6 +79,7 @@ import { RolesGuard } from './core/guards/roles.guard';
   controllers: [
     AppController,
     AuthController,
+    TenantsController,
     ProductsController,
     CategoriesController,
     OrdersController,
@@ -73,10 +90,14 @@ import { RolesGuard } from './core/guards/roles.guard';
     UploadController,
     CompanyConfigController,
     PaymentsController,
+    BroadcastController,
+    PlansController,
   ],
   providers: [
     // Prisma & Repositories
     PrismaService,
+    PrismaTenantRepository,
+    PrismaPlanRepository,
     PrismaUserRepository,
     PrismaProductRepository,
     PrismaCategoryRepository,
@@ -84,9 +105,10 @@ import { RolesGuard } from './core/guards/roles.guard';
     PrismaChatRepository,
     PrismaWhatsAppSessionRepository,
     PrismaCompanyConfigRepository,
+    PrismaBroadcastRepository,
     {
       provide: 'ICompanyConfigRepository',
-      useClass: PrismaCompanyConfigRepository,
+      useExisting: PrismaCompanyConfigRepository,
     },
 
     // WhatsApp Engine & AI Assistant & PDF Generator & Payments
@@ -97,9 +119,12 @@ import { RolesGuard } from './core/guards/roles.guard';
     CatalogPdfService,
     ReceiptPdfService,
     CulqiService,
+    MercadoPagoService,
 
     // Services
     AuthService,
+    TenantsService,
+    PlansService,
     ProductsService,
     CategoriesService,
     OrdersService,
@@ -108,6 +133,9 @@ import { RolesGuard } from './core/guards/roles.guard';
     DashboardService,
     CompanyConfigService,
     DeliveryService,
+    OrderRecoveryService,
+    BroadcastService,
+    OrderEventsListener,
 
     // Security & Guards
     JwtStrategy,

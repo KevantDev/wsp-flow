@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
+import * as path from 'path';
 import { PrismaProductRepository } from '../persistence/prisma/repositories/prisma-product.repository';
 import { PrismaOrderRepository } from '../persistence/prisma/repositories/prisma-order.repository';
 import { PrismaChatRepository } from '../persistence/prisma/repositories/prisma-chat.repository';
@@ -7,12 +10,15 @@ import { PrismaCompanyConfigRepository } from '../persistence/prisma/repositorie
 import { WhatsAppGateway } from '../../presentation/gateways/whatsapp.gateway';
 import { OrderSource, OrderStatus } from '../../domain/entities/order.entity';
 import { DeliveryService } from '../../application/services/delivery.service';
+import { CatalogPdfService } from '../pdf/catalog-pdf.service';
 
 export interface AiProcessResult {
   replyText: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'document';
   caption?: string;
+  documentPath?: string;
+  documentFileName?: string;
 }
 
 @Injectable()
@@ -28,6 +34,7 @@ export class AiService {
     private readonly configRepo: PrismaCompanyConfigRepository,
     private readonly wsGateway: WhatsAppGateway,
     private readonly deliveryService: DeliveryService,
+    private readonly catalogPdfService: CatalogPdfService,
   ) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey && apiKey.trim().length > 0) {
@@ -45,9 +52,53 @@ export class AiService {
   }
 
   /**
+   * Transcribe una nota de voz o audio recibido por WhatsApp usando OpenAI Whisper AI
+   */
+  async transcribeAudio(audioBuffer: Buffer, originalMimeType?: string): Promise<string> {
+    if (!this.openai) {
+      this.logger.warn('OpenAI no configurado para transcripción de audio.');
+      return '';
+    }
+
+    try {
+      this.logger.log(`🎙️ [Whisper AI] Transcribiendo nota de voz (${audioBuffer.length} bytes)...`);
+
+      const tempDir = path.resolve(process.cwd(), 'uploads', 'temp_audio');
+      await fsPromises.mkdir(tempDir, { recursive: true });
+
+      const extension = originalMimeType?.includes('mp4') ? 'mp4' : 'ogg';
+      const tempFilePath = path.join(
+        tempDir,
+        `voice_${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`,
+      );
+      await fsPromises.writeFile(tempFilePath, audioBuffer);
+
+      const fileStream = fs.createReadStream(tempFilePath);
+
+      const transcription = await this.openai.audio.transcriptions.create({
+        file: fileStream,
+        model: 'whisper-1',
+        language: 'es',
+        prompt: 'Atención al cliente comercio electrónico en Perú, productos, stock, compras, pagos con Yape o Culqi, delivery a Lima y provincias.',
+      });
+
+      // Limpiar archivo temporal de forma asíncrona no bloqueante
+      await fsPromises.unlink(tempFilePath).catch(() => {});
+
+      const text = transcription.text ? transcription.text.trim() : '';
+      this.logger.log(`🎙️ [Whisper AI] Transcripción completada: "${text}"`);
+      return text;
+    } catch (err: any) {
+      this.logger.error(`Error en transcripción de audio Whisper: ${err.message}`);
+      return '';
+    }
+  }
+
+  /**
    * Procesa un mensaje de WhatsApp entrante con GPT-5.6-luna, memoria de conversación y Function Calling
    */
   async processWhatsAppMessage(
+    tenantId: string,
     customerPhone: string,
     customerName: string,
     userMessage: string,
@@ -58,8 +109,13 @@ export class AiService {
     }
 
     try {
-      // 1. Obtener la configuración dinámica de la empresa y la IA
-      const config = await this.configRepo.getConfig();
+      // 1. Obtener la configuración, historial y catálogo activo concurrentemente en paralelo
+      const [config, rawMessages, activeProducts] = await Promise.all([
+        this.configRepo.getConfig(tenantId),
+        chatSessionId ? this.chatRepo.getMessages(chatSessionId, 15) : Promise.resolve([]),
+        this.productRepo.findAll({ tenantId, onlyAvailable: true }),
+      ]);
+
       let modelToUse = config.aiModel || this.defaultModel || 'gpt-4o-mini';
       if (modelToUse.includes('luna') || !modelToUse.startsWith('gpt-')) {
         modelToUse = 'gpt-4o-mini';
@@ -67,21 +123,13 @@ export class AiService {
       const temperature = config.aiTemperature ?? 0.7;
       const historyLimit = config.historyMessageLimit ?? 15;
 
-      // 2. Obtener historial reciente de la conversación para contexto continuo
-      let recentHistory: { role: 'user' | 'assistant'; content: string }[] = [];
-      if (chatSessionId) {
-        const messages = await this.chatRepo.getMessages(chatSessionId, historyLimit);
-        // Tomar los últimos mensajes antes del actual
-        recentHistory = messages
-          .slice(-historyLimit)
-          .map((m) => ({
-            role: m.sender === 'CUSTOMER' ? ('user' as const) : ('assistant' as const),
-            content: m.content,
-          }));
-      }
-
-      // 3. Obtener catálogo rápido de productos activos para contexto base
-      const activeProducts = await this.productRepo.findAll({ onlyAvailable: true });
+      // 2. Formatear historial reciente de la conversación
+      const recentHistory: { role: 'user' | 'assistant'; content: string }[] = rawMessages
+        .slice(-historyLimit)
+        .map((m) => ({
+          role: m.sender === 'CUSTOMER' ? ('user' as const) : ('assistant' as const),
+          content: m.content,
+        }));
       const productsSummary = activeProducts.map((p) => ({
         sku: p.sku,
         name: p.name,
@@ -120,8 +168,12 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
 6. Si el cliente solicita fotos o video demostrativo de un producto, utiliza 'send_product_media'.
 7. MANEJO DE UBICACIÓN GPS: Cuando el cliente envíe su ubicación GPS de WhatsApp (mensaje que inicia con "📍 [Ubicación GPS: ...]"), agradécele, confirma la dirección detectada y distrito, indícale la tarifa de envío calculada en Soles (S/), y pregúntale si confirma su pedido con despacho a esa dirección o qué productos desea ordenar.
 8. Cuando el cliente pregunte por su pedido, usa 'track_order' y explícale con amabilidad en Soles (S/).
-9. Cuando el cliente desee comprar, pide su nombre y dirección de entrega y ejecuta 'create_order'.
+9. FLUJO DE COMPRA OBLIGATORIO: Antes de llamar a 'create_order', SIEMPRE debes: (a) confirmar los productos y cantidad, (b) confirmar la dirección o tipo de entrega, (c) PREGUNTAR EXPLÍCITAMENTE el método de pago con estas opciones:
+   - *1️⃣ Pago online* (Tarjeta de crédito/débito o Yape — enlace seguro)
+   - *2️⃣ Efectivo al recibir* (Contra entrega — pagas cuando llega tu pedido)
+   Solo llama a 'create_order' después de que el cliente elija una opción.
 10. Si el cliente pide expresamente una persona o no puedes resolver su problema, usa 'transfer_to_human'.${salesUrgencyPrompt}`;
+
 
       const tools: OpenAI.ChatCompletionTool[] = [
         {
@@ -190,7 +242,7 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
           function: {
             name: 'create_order',
             description:
-              'Crea y registra un nuevo pedido de compra en PostgreSQL, descuenta el stock y notifica al panel To-Do Kanban.',
+              'Crea y registra un nuevo pedido de compra en PostgreSQL, descuenta el stock y notifica al panel To-Do Kanban. IMPORTANTE: Antes de llamar a esta función, SIEMPRE debes preguntar al cliente su método de pago (tarjeta/Yape online o efectivo contra entrega) si no lo mencionó.',
             parameters: {
               type: 'object',
               properties: {
@@ -201,6 +253,11 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
                 customerAddress: {
                   type: 'string',
                   description: 'Dirección o ciudad de envío proporcionada por el cliente.',
+                },
+                paymentMethod: {
+                  type: 'string',
+                  enum: ['CULQI_ONLINE', 'CASH_ON_DELIVERY'],
+                  description: 'Método de pago elegido por el cliente. "CULQI_ONLINE" para pago con tarjeta o Yape, "CASH_ON_DELIVERY" para efectivo al recibir el pedido.',
                 },
                 items: {
                   type: 'array',
@@ -221,7 +278,7 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
                   },
                 },
               },
-              required: ['customerName', 'items'],
+              required: ['customerName', 'items', 'paymentMethod'],
             },
           },
         },
@@ -285,6 +342,18 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
         {
           type: 'function',
           function: {
+            name: 'send_catalog_pdf',
+            description:
+              'Genera y envía el archivo del Catálogo Oficial de Productos en formato PDF al chat de WhatsApp del cliente cuando solicita ver el catálogo, lista de productos o precios.',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
             name: 'get_store_info',
             description:
               'Devuelve información oficial sobre métodos de pago, envíos, horarios de atención y dirección de recojo en tienda.',
@@ -305,7 +374,15 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
         },
       ];
 
-      let mediaToDispatch: { mediaUrl: string; mediaType: 'image' | 'video'; caption?: string } | undefined;
+      let mediaToDispatch:
+        | {
+            mediaUrl?: string;
+            mediaType: 'image' | 'video' | 'document';
+            caption?: string;
+            documentPath?: string;
+            documentFileName?: string;
+          }
+        | undefined;
 
       // Primera llamada al modelo
       let response = await this.openai.chat.completions.create({
@@ -332,16 +409,36 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
           this.logger.log(`🔧 Tool [${functionName}] ejecutada con args: ${JSON.stringify(args)}`);
 
           switch (functionName) {
+            case 'send_catalog_pdf': {
+              try {
+                const { filePath } = await this.catalogPdfService.generateCatalogPdf(tenantId);
+                toolResult = JSON.stringify({
+                  success: true,
+                  message: 'El Catálogo PDF oficial con fotos, precios y stock en Soles ha sido generado y adjuntado al mensaje.',
+                  fileName: 'Catalogo_Productos.pdf',
+                });
+                mediaToDispatch = {
+                  documentPath: filePath,
+                  documentFileName: 'Catalogo_Productos.pdf',
+                  mediaType: 'document',
+                  caption: `📄 *Catálogo Oficial de Productos — ${config.companyName}*`,
+                };
+              } catch (pdfErr: any) {
+                toolResult = JSON.stringify({ error: `Error generando PDF: ${pdfErr.message}` });
+              }
+              break;
+            }
+
             case 'search_products':
-              toolResult = await this.executeSearchProducts(args.query, args.categoryId);
+              toolResult = await this.executeSearchProducts(tenantId, args.query, args.categoryId);
               break;
 
             case 'check_stock':
-              toolResult = await this.executeCheckStock(args.sku);
+              toolResult = await this.executeCheckStock(tenantId, args.sku);
               break;
 
             case 'send_product_media': {
-              const mediaResult = await this.executeSendProductMedia(args.sku, args.mediaType || 'image');
+              const mediaResult = await this.executeSendProductMedia(tenantId, args.sku, args.mediaType || 'image');
               toolResult = mediaResult.resultJson;
               if (mediaResult.mediaUrl) {
                 mediaToDispatch = {
@@ -355,10 +452,13 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
 
             case 'create_order':
               toolResult = await this.executeCreateOrder(
+                tenantId,
                 customerPhone,
                 args.customerName || customerName,
                 args.customerAddress || '',
                 args.items || [],
+                chatSessionId,
+                args.paymentMethod,
               );
               break;
 
@@ -370,17 +470,17 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
                 deliveryFee: calcResult.deliveryFee,
                 estimatedTime: calcResult.zone.estimatedTime,
                 description: calcResult.zone.description,
-                pickupAddress: 'Av. Larco 743, Miraflores, Lima (Gratis)',
+                pickupAddress: config.pickupStoreAddress || 'Av. Larco 743, Miraflores, Lima (Gratis)',
               });
               break;
             }
 
             case 'track_order':
-              toolResult = await this.executeTrackOrder(customerPhone, args.orderNumber);
+              toolResult = await this.executeTrackOrder(tenantId, customerPhone, args.orderNumber, chatSessionId);
               break;
 
             case 'transfer_to_human':
-              toolResult = await this.executeTransferToHuman(customerPhone, args.reason);
+              toolResult = await this.executeTransferToHuman(tenantId, customerPhone, args.reason);
               break;
 
             case 'get_store_info':
@@ -425,6 +525,8 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
         replyText: cleanReply,
         mediaUrl: mediaToDispatch?.mediaUrl,
         mediaType: mediaToDispatch?.mediaType,
+        documentPath: mediaToDispatch?.documentPath,
+        documentFileName: mediaToDispatch?.documentFileName,
         caption: mediaToDispatch?.caption
           ? mediaToDispatch.caption
               .replace(/\*\*(.*?)\*\*/g, '*$1*')
@@ -439,9 +541,9 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
 
   // --- Implementaciones de Tools / Functions ---
 
-  private async executeSearchProducts(query?: string, categoryId?: string): Promise<string> {
+  private async executeSearchProducts(tenantId: string, query?: string, categoryId?: string): Promise<string> {
     try {
-      const products = await this.productRepo.findAll({ categoryId, search: query, onlyAvailable: true });
+      const products = await this.productRepo.findAll({ tenantId, categoryId, search: query, onlyAvailable: true });
       const simplified = products.map((p) => ({
         sku: p.sku,
         name: p.name,
@@ -459,9 +561,9 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
     }
   }
 
-  private async executeCheckStock(sku: string): Promise<string> {
+  private async executeCheckStock(tenantId: string, sku: string): Promise<string> {
     try {
-      const product = await this.productRepo.findBySku(sku);
+      const product = await this.productRepo.findBySku(sku, tenantId);
       if (!product) {
         return JSON.stringify({ found: false, message: `No se encontró producto con SKU ${sku}` });
       }
@@ -480,11 +582,12 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
   }
 
   private async executeSendProductMedia(
+    tenantId: string,
     sku: string,
     requestedType: 'image' | 'video',
   ): Promise<{ resultJson: string; mediaUrl?: string; mediaType: 'image' | 'video'; caption?: string }> {
     try {
-      const product = await this.productRepo.findBySku(sku);
+      const product = await this.productRepo.findBySku(sku, tenantId);
       if (!product) {
         return {
           resultJson: JSON.stringify({ success: false, message: `Producto con SKU ${sku} no encontrado.` }),
@@ -538,17 +641,20 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
   }
 
   private async executeCreateOrder(
+    tenantId: string,
     phone: string,
     customerName: string,
     customerAddress: string,
     items: { sku: string; quantity: number }[],
+    chatSessionId?: string,
+    paymentMethod?: string,
   ): Promise<string> {
     try {
       const orderItems = [];
       let subtotal = 0;
 
       for (const item of items) {
-        const prod = await this.productRepo.findBySku(item.sku);
+        const prod = await this.productRepo.findBySku(item.sku, tenantId);
         if (!prod) {
           return JSON.stringify({ success: false, error: `El producto con código ${item.sku} no existe.` });
         }
@@ -578,8 +684,14 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
       const deliveryFee = deliveryCalc.deliveryFee;
       const total = subtotal + deliveryFee;
 
+      // Determinar método de pago
+      const isCashOnDelivery = paymentMethod === 'CASH_ON_DELIVERY';
+      const resolvedPaymentMethod = isCashOnDelivery ? 'CASH_ON_DELIVERY' : 'CULQI_PENDING';
+
       const newOrder = await this.orderRepo.create(
         {
+          tenantId,
+          chatSessionId,
           customerName,
           customerPhone: phone,
           customerAddress: customerAddress || 'Coordinar entrega / Recojo en tienda',
@@ -588,16 +700,30 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
           subtotal,
           deliveryFee,
           total,
-          paymentMethod: 'CULQI_PENDING',
-          notes: `Generado por Asistente AI Luna - Método: ${deliveryCalc.zone.name} (S/ ${deliveryFee.toFixed(2)})`,
+          paymentMethod: resolvedPaymentMethod as any,
+          notes: `Generado por Asistente AI Luna - Método: ${deliveryCalc.zone.name} (S/ ${deliveryFee.toFixed(2)}) - Pago: ${isCashOnDelivery ? 'Efectivo contra entrega' : 'Online Culqi/Yape'}`,
         },
         orderItems,
       );
 
       const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
-      const paymentUrl = `${baseUrl}/pay/${newOrder.orderNumber}`;
+      const paymentUrl = isCashOnDelivery ? null : `${baseUrl}/pay/${newOrder.orderNumber}`;
 
       this.wsGateway.emitNewOrder(newOrder);
+
+      if (isCashOnDelivery) {
+        return JSON.stringify({
+          success: true,
+          orderNumber: newOrder.orderNumber,
+          subtotal,
+          deliveryFee,
+          total,
+          deliveryZone: deliveryCalc.zone.name,
+          paymentMethod: 'CASH_ON_DELIVERY',
+          status: newOrder.status,
+          message: `Pedido registrado con éxito. El cliente pagará en *efectivo al recibir*. Informa: Subtotal S/ ${subtotal.toFixed(2)} + ${deliveryCalc.zone.name} S/ ${deliveryFee.toFixed(2)} = *Total S/ ${total.toFixed(2)}*. Le llegarán notificaciones de seguimiento por WhatsApp.`,
+        });
+      }
 
       return JSON.stringify({
         success: true,
@@ -615,28 +741,8 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
     }
   }
 
-  private async executeTrackOrder(phone: string, orderNumber?: string): Promise<string> {
+  private async executeTrackOrder(tenantId: string, phone: string, orderNumber?: string, chatSessionId?: string): Promise<string> {
     try {
-      const cleanPhone = phone.replace(/\D/g, '');
-      let order = null;
-      if (orderNumber) {
-        order = await this.orderRepo.findByOrderNumber(orderNumber.trim().toUpperCase());
-      }
-      if (!order) {
-        const list = await this.orderRepo.findAll({ customerPhone: cleanPhone, limit: 1 });
-        if (list && list.length > 0) {
-          order = list[0];
-        }
-      }
-
-      if (!order) {
-        return JSON.stringify({
-          found: false,
-          message:
-            'No se encontró ningún pedido reciente asociado a este número ni al código de orden ingresado.',
-        });
-      }
-
       const statusLabels: Record<string, string> = {
         PENDING: '⏳ Pendiente de Pago / Confirmación',
         CONFIRMED: '✅ Pago Confirmado (En cola de empaquetado)',
@@ -648,40 +754,70 @@ REGLAS INVIOLABLES DE SEGURIDAD & FORMATO COMERCIAL:
 
       const baseUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
 
-      return JSON.stringify({
-        found: true,
-        orderNumber: order.orderNumber,
-        customerName: order.customerName,
-        status: order.status,
-        statusLabel: statusLabels[order.status] || order.status,
-        subtotal: order.subtotal,
-        deliveryFee: order.deliveryFee,
-        total: order.total,
-        deliveryAddress: order.customerAddress,
-        items: (order.items || []).map((i) => ({
+      let specificOrder = null;
+      if (orderNumber) {
+        specificOrder = await this.orderRepo.findByOrderNumber(orderNumber.trim().toUpperCase(), tenantId);
+      }
+
+      // Buscar pedidos vinculados por chatSessionId o por teléfono
+      const ordersList = await this.orderRepo.findAll({
+        tenantId,
+        chatSessionId,
+        customerPhone: phone,
+        limit: 5,
+      });
+
+      if (!specificOrder && ordersList.length === 0) {
+        return JSON.stringify({
+          found: false,
+          message:
+            'No se encontró ningún pedido reciente asociado a este número ni al código de orden ingresado.',
+        });
+      }
+
+      const mapOrderInfo = (ord: any) => ({
+        orderNumber: ord.orderNumber,
+        customerName: ord.customerName,
+        status: ord.status,
+        statusLabel: statusLabels[ord.status] || ord.status,
+        subtotal: ord.subtotal,
+        deliveryFee: ord.deliveryFee,
+        total: ord.total,
+        deliveryAddress: ord.customerAddress,
+        createdAt: ord.createdAt,
+        items: (ord.items || []).map((i: any) => ({
           product: i.productName,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           subtotal: i.subtotal,
         })),
         isPaid: Boolean(
-          order.paidAt ||
-            order.status === OrderStatus.CONFIRMED ||
-            order.status === OrderStatus.PROCESSING ||
-            order.status === OrderStatus.SHIPPED ||
-            order.status === OrderStatus.DELIVERED,
+          ord.paidAt ||
+            ord.status === OrderStatus.CONFIRMED ||
+            ord.status === OrderStatus.PROCESSING ||
+            ord.status === OrderStatus.SHIPPED ||
+            ord.status === OrderStatus.DELIVERED,
         ),
-        paymentUrl:
-          order.status === OrderStatus.PENDING ? `${baseUrl}/pay/${order.orderNumber}` : null,
+        paymentUrl: ord.status === OrderStatus.PENDING ? `${baseUrl}/pay/${ord.orderNumber}` : null,
+      });
+
+      const primaryOrder = specificOrder || ordersList[0];
+
+      return JSON.stringify({
+        found: true,
+        totalOrdersCount: ordersList.length,
+        latestOrder: mapOrderInfo(primaryOrder),
+        allRecentOrders: ordersList.map(mapOrderInfo),
+        message: `El cliente tiene ${ordersList.length} pedido(s) registrado(s). El pedido principal/más reciente es #${primaryOrder.orderNumber} con estado: ${statusLabels[primaryOrder.status] || primaryOrder.status}. Explícale con claridad los productos y estado en Soles (S/).`,
       });
     } catch (err: any) {
       return JSON.stringify({ found: false, error: err.message });
     }
   }
 
-  private async executeTransferToHuman(phone: string, reason: string): Promise<string> {
+  private async executeTransferToHuman(tenantId: string, phone: string, reason: string): Promise<string> {
     try {
-      await this.chatRepo.toggleBot(phone, false);
+      await this.chatRepo.toggleBot(tenantId, phone, false);
       return JSON.stringify({
         success: true,
         transferred: true,

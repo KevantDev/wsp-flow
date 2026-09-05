@@ -2,6 +2,7 @@ export class ProductImageEntity {
   id: string;
   productId: string;
   imageUrl: string;
+  altText?: string;
   isPrimary: boolean;
   orderIndex: number;
   createdAt: Date;
@@ -9,6 +10,7 @@ export class ProductImageEntity {
 
 export class ProductEntity {
   id: string;
+  tenantId: string;
   name: string;
   slug: string;
   sku: string;

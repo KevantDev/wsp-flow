@@ -43,6 +43,11 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
-.idea/
+*.idea/
 *.sublime-project
 *.sublime-workspace
+
+# Cache y compilación adicional
+__pycache__/
+*.py[cod]
+*.tsbuildinfo

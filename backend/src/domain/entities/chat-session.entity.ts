@@ -23,9 +23,11 @@ export class ChatMessageEntity {
 
 export class ChatSessionEntity {
   id: string;
+  tenantId: string;
   customerPhone: string;
   customerName?: string;
   isBotActive: boolean;
+  isArchived: boolean;
   lastInteraction: Date;
   unreadCount: number;
   assignedUserId?: string;

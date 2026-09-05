@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ProductsService } from '../../core/services/products.service';
 import { CartService } from '../../core/services/cart.service';
+import { ToastService } from '../../core/services/toast.service';
 import { CartDrawerComponent } from '../../shared/components/cart-drawer/cart-drawer.component';
 import { Product } from '../../core/models/models';
 
@@ -854,6 +855,7 @@ interface ChatSimulationMessage {
 })
 export class LandingComponent implements OnInit {
   private productsService = inject(ProductsService);
+  private toast = inject(ToastService);
   cartService = inject(CartService);
 
   publicProducts = signal<Product[]>([]);
@@ -911,10 +913,11 @@ export class LandingComponent implements OnInit {
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
+        this.toast.success('Catálogo oficial descargado con éxito.');
       },
       error: () => {
         this.isDownloadingPdf.set(false);
-        alert('Error al descargar el catálogo en PDF.');
+        this.toast.error('Error al descargar el catálogo en PDF.');
       },
     });
   }

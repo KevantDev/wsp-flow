@@ -24,6 +24,8 @@ export class SocketService {
   onOrderUpdated$ = this.orderUpdatedSubject.asObservable();
   onStockAlert$ = this.lowStockSubject.asObservable();
 
+  private currentTenantId: string | null = null;
+
   constructor() {
     this.socket = io(environment.wsUrl, {
       transports: ['websocket', 'polling'],
@@ -34,6 +36,12 @@ export class SocketService {
   }
 
   private registerListeners() {
+    this.socket.on('connect', () => {
+      if (this.currentTenantId) {
+        this.socket.emit('join:tenant', { tenantId: this.currentTenantId });
+      }
+    });
+
     this.socket.on('whatsapp:qr', (data: { qr: string }) => {
       this.qrSubject.next(data);
     });
@@ -56,6 +64,25 @@ export class SocketService {
 
     this.socket.on('products:low_stock', (data: any) => {
       this.lowStockSubject.next(data);
+    });
+  }
+
+  joinTenant(tenantId: string) {
+    if (!tenantId) return;
+    this.currentTenantId = tenantId;
+    if (this.socket.connected) {
+      this.socket.emit('join:tenant', { tenantId });
+    }
+  }
+
+  listen<T = any>(eventName: string): Observable<T> {
+    return new Observable<T>((subscriber) => {
+      this.socket.on(eventName, (data: T) => {
+        subscriber.next(data);
+      });
+      return () => {
+        this.socket.off(eventName);
+      };
     });
   }
 

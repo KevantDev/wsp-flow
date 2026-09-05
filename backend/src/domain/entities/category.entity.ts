@@ -1,5 +1,6 @@
 export class CategoryEntity {
   id: string;
+  tenantId: string;
   name: string;
   slug: string;
   description?: string;

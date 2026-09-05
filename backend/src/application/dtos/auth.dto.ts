@@ -1,5 +1,5 @@
 import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
-import { Role } from '../../domain/entities/user.entity';
+export { RegisterStoreDto } from './tenant.dto';
 
 export class LoginDto {
   @IsEmail({}, { message: 'El correo electrónico no es válido' })

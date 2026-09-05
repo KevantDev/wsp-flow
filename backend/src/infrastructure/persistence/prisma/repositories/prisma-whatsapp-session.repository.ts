@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { IWhatsAppSessionRepository } from '../../../../domain/repositories/whatsapp-session.repository.interface';
-import { WhatsAppSessionEntity, SessionStatus } from '../../../../domain/entities/whatsapp-session.entity';
+import {
+  WhatsAppSessionEntity,
+  SessionStatus,
+} from '../../../../domain/entities/whatsapp-session.entity';
 
 @Injectable()
 export class PrismaWhatsAppSessionRepository implements IWhatsAppSessionRepository {
@@ -10,6 +13,7 @@ export class PrismaWhatsAppSessionRepository implements IWhatsAppSessionReposito
   private mapEntity(s: any): WhatsAppSessionEntity {
     return new WhatsAppSessionEntity({
       id: s.id,
+      tenantId: s.tenantId,
       sessionName: s.sessionName,
       phoneNumber: s.phoneNumber,
       status: s.status as SessionStatus,
@@ -22,14 +26,20 @@ export class PrismaWhatsAppSessionRepository implements IWhatsAppSessionReposito
     });
   }
 
-  async getSession(sessionName = 'default'): Promise<WhatsAppSessionEntity | null> {
+  async getSession(tenantId: string, sessionName = 'default'): Promise<WhatsAppSessionEntity | null> {
     let session = await this.prisma.whatsAppSession.findUnique({
-      where: { sessionName },
+      where: {
+        tenantId_sessionName: {
+          tenantId,
+          sessionName,
+        },
+      },
     });
 
     if (!session) {
       session = await this.prisma.whatsAppSession.create({
         data: {
+          tenantId,
           sessionName,
           status: 'DISCONNECTED',
           isAutoReplyActive: true,
@@ -41,16 +51,33 @@ export class PrismaWhatsAppSessionRepository implements IWhatsAppSessionReposito
     return this.mapEntity(session);
   }
 
-  async updateStatus(status: SessionStatus, qrCode?: string | null, phoneNumber?: string | null): Promise<WhatsAppSessionEntity> {
+  async getAllSessions(): Promise<WhatsAppSessionEntity[]> {
+    const sessions = await this.prisma.whatsAppSession.findMany();
+    return sessions.map((s) => this.mapEntity(s));
+  }
+
+  async updateStatus(
+    tenantId: string,
+    status: SessionStatus,
+    qrCode?: string | null,
+    phoneNumber?: string | null,
+    sessionName = 'default',
+  ): Promise<WhatsAppSessionEntity> {
     const updated = await this.prisma.whatsAppSession.upsert({
-      where: { sessionName: 'default' },
+      where: {
+        tenantId_sessionName: {
+          tenantId,
+          sessionName,
+        },
+      },
       update: {
         status: status as any,
         qrCode: qrCode !== undefined ? qrCode : undefined,
         phoneNumber: phoneNumber !== undefined ? phoneNumber : undefined,
       },
       create: {
-        sessionName: 'default',
+        tenantId,
+        sessionName,
         status: status as any,
         qrCode,
         phoneNumber,
@@ -59,16 +86,26 @@ export class PrismaWhatsAppSessionRepository implements IWhatsAppSessionReposito
     return this.mapEntity(updated);
   }
 
-  async updateSettings(data: { isAutoReplyActive?: boolean; welcomeMessage?: string; outOfStockMessage?: string }): Promise<WhatsAppSessionEntity> {
+  async updateSettings(
+    tenantId: string,
+    data: { isAutoReplyActive?: boolean; welcomeMessage?: string; outOfStockMessage?: string },
+    sessionName = 'default',
+  ): Promise<WhatsAppSessionEntity> {
     const updated = await this.prisma.whatsAppSession.upsert({
-      where: { sessionName: 'default' },
+      where: {
+        tenantId_sessionName: {
+          tenantId,
+          sessionName,
+        },
+      },
       update: {
         ...(data.isAutoReplyActive !== undefined && { isAutoReplyActive: data.isAutoReplyActive }),
         ...(data.welcomeMessage !== undefined && { welcomeMessage: data.welcomeMessage }),
         ...(data.outOfStockMessage !== undefined && { outOfStockMessage: data.outOfStockMessage }),
       },
       create: {
-        sessionName: 'default',
+        tenantId,
+        sessionName,
         ...data,
       },
     });

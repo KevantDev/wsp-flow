@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, adminGuard } from './core/guards/auth.guard';
+import { authGuard, adminGuard, superAdminGuard } from './core/guards/auth.guard';
 import { MainLayoutComponent } from './layouts/main-layout/main-layout.component';
 
 export const routes: Routes = [
@@ -18,6 +18,30 @@ export const routes: Routes = [
     path: 'login',
     loadComponent: () =>
       import('./features/auth/login/login.component').then((m) => m.LoginComponent),
+  },
+  {
+    path: 'register-store',
+    loadComponent: () =>
+      import('./features/auth/register-store/register-store.component').then(
+        (m) => m.RegisterStoreComponent,
+      ),
+  },
+  {
+    path: 'onboarding',
+    loadComponent: () =>
+      import('./features/auth/register-store/register-store.component').then(
+        (m) => m.RegisterStoreComponent,
+      ),
+  },
+  {
+    path: 'tienda/:slug',
+    loadComponent: () =>
+      import('./features/store/store-front.component').then((m) => m.StoreFrontComponent),
+  },
+  {
+    path: 'store/:slug',
+    loadComponent: () =>
+      import('./features/store/store-front.component').then((m) => m.StoreFrontComponent),
   },
   {
     path: 'pay/:orderNumber',
@@ -52,6 +76,11 @@ export const routes: Routes = [
           import('./features/live-chat/live-chat.component').then((m) => m.LiveChatComponent),
       },
       {
+        path: 'broadcasts',
+        loadComponent: () =>
+          import('./features/broadcasts/broadcasts.component').then((m) => m.BroadcastsComponent),
+      },
+      {
         path: 'users',
         canActivate: [adminGuard],
         loadComponent: () =>
@@ -62,6 +91,46 @@ export const routes: Routes = [
         canActivate: [adminGuard],
         loadComponent: () =>
           import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+      },
+      {
+        path: 'admin',
+        canActivate: [superAdminGuard],
+        loadComponent: () =>
+          import('./features/admin/super-admin-dashboard/super-admin-dashboard.component').then(
+            (m) => m.SuperAdminDashboardComponent,
+          ),
+      },
+      {
+        path: 'admin/tenants',
+        canActivate: [superAdminGuard],
+        loadComponent: () =>
+          import('./features/admin/tenants-management/tenants-management.component').then(
+            (m) => m.TenantsManagementComponent,
+          ),
+      },
+      {
+        path: 'admin/sessions',
+        canActivate: [superAdminGuard],
+        loadComponent: () =>
+          import('./features/admin/sessions-monitor/sessions-monitor.component').then(
+            (m) => m.SessionsMonitorComponent,
+          ),
+      },
+      {
+        path: 'admin/plans',
+        canActivate: [superAdminGuard],
+        loadComponent: () =>
+          import('./features/admin/plans-management/plans-management.component').then(
+            (m) => m.PlansManagementComponent,
+          ),
+      },
+      {
+        path: 'admin/system',
+        canActivate: [superAdminGuard],
+        loadComponent: () =>
+          import('./features/admin/system-status/system-status.component').then(
+            (m) => m.SystemStatusComponent,
+          ),
       },
     ],
   },

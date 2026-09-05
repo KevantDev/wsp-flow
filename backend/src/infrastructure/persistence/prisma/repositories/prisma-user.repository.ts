@@ -25,8 +25,12 @@ export class PrismaUserRepository implements IUserRepository {
     });
   }
 
-  async findAll(): Promise<UserEntity[]> {
+  async findAll(tenantId?: string): Promise<UserEntity[]> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+
     const users = await this.prisma.user.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
     });
     return users.map((u) => new UserEntity({ ...u, role: u.role as Role }));
@@ -35,6 +39,7 @@ export class PrismaUserRepository implements IUserRepository {
   async create(user: Partial<UserEntity>): Promise<UserEntity> {
     const created = await this.prisma.user.create({
       data: {
+        tenantId: user.tenantId,
         email: user.email!,
         passwordHash: user.passwordHash!,
         fullName: user.fullName!,
@@ -57,6 +62,7 @@ export class PrismaUserRepository implements IUserRepository {
         ...(user.isActive !== undefined && { isActive: user.isActive }),
         ...(user.avatarUrl !== undefined && { avatarUrl: user.avatarUrl }),
         ...(user.passwordHash && { passwordHash: user.passwordHash }),
+        ...(user.tenantId !== undefined && { tenantId: user.tenantId }),
       },
     });
     return new UserEntity({ ...updated, role: updated.role as Role });

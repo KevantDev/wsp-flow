@@ -3,43 +3,49 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   WASocket,
-  proto,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import * as QRCode from 'qrcode';
 import pino from 'pino';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import axios from 'axios';
 import { WhatsAppGateway } from '../../presentation/gateways/whatsapp.gateway';
 import { PrismaWhatsAppSessionRepository } from '../persistence/prisma/repositories/prisma-whatsapp-session.repository';
 import { PrismaChatRepository } from '../persistence/prisma/repositories/prisma-chat.repository';
 import { PrismaCompanyConfigRepository } from '../persistence/prisma/repositories/prisma-company-config.repository';
+import { PrismaTenantRepository } from '../persistence/prisma/repositories/prisma-tenant.repository';
 import { BaileysFlowHandler } from './baileys-flow.handler';
 import { DeliveryService } from '../../application/services/delivery.service';
+import { AiService } from '../ai/ai.service';
 import { SessionStatus } from '../../domain/entities/whatsapp-session.entity';
 import { MessageSender } from '../../domain/entities/chat-session.entity';
 
 interface DebounceBuffer {
   timer: NodeJS.Timeout;
   messages: string[];
+  tenantId: string;
   customerPhone: string;
   customerName: string;
   chatSessionId: string;
   remoteJid: string;
   lastMessageKey: any;
+  rawMessage?: any;
 }
 
 @Injectable()
 export class BaileysService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BaileysService.name);
-  private socket: WASocket | null = null;
-  private qrCodeDataUrl: string | null = null;
-  private connectionStatus: SessionStatus = SessionStatus.DISCONNECTED;
-  private botPhoneNumber: string | null = null;
-  private isConnecting = false;
-  private readonly authFolder = path.resolve(process.cwd(), 'auth_info_baileys');
 
-  // Buffer de mensajes entrantes con debounce de 10 segundos
+  // Pool de conexiones multi-tenant
+  private sockets = new Map<string, WASocket>();
+  private qrCodeDataUrls = new Map<string, string | null>();
+  private connectionStatuses = new Map<string, SessionStatus>();
+  private botPhoneNumbers = new Map<string, string | null>();
+  private isConnectingMap = new Map<string, boolean>();
+
+  // Buffer de mensajes entrantes con debounce de 10 segundos (Key: `${tenantId}:${customerPhone}`)
   private messageBuffers = new Map<string, DebounceBuffer>();
 
   constructor(
@@ -47,127 +53,193 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     private readonly sessionRepo: PrismaWhatsAppSessionRepository,
     private readonly chatRepo: PrismaChatRepository,
     private readonly configRepo: PrismaCompanyConfigRepository,
+    private readonly tenantRepo: PrismaTenantRepository,
     private readonly flowHandler: BaileysFlowHandler,
     private readonly deliveryService: DeliveryService,
+    private readonly aiService: AiService,
   ) {}
 
   async onModuleInit() {
-    if (fs.existsSync(this.authFolder) && fs.readdirSync(this.authFolder).length > 0) {
-      this.logger.log('📂 Sesión previa de Baileys detectada. Iniciando autoconexión...');
-      setTimeout(() => this.initializeSocket(), 2000);
-    }
+    this.logger.log('📂 Inicializando servicio Multi-Tenant de WhatsApp (Baileys)...');
+    setTimeout(async () => {
+      try {
+        const tenants = await this.tenantRepo.findAll();
+        this.logger.log(`📱 Encontrados ${tenants.length} tenants registrados.`);
+        for (const tenant of tenants) {
+          if (tenant.status === 'ACTIVE') {
+            this.initializeSocket(tenant.id).catch((err) => {
+              this.logger.error(`Error iniciando socket para tenant ${tenant.name} (${tenant.id}): ${err.message}`);
+            });
+          }
+        }
+      } catch (err: any) {
+        this.logger.error('Error cargando tenants en Baileys onModuleInit:', err.message);
+      }
+    }, 2000);
   }
 
   async onModuleDestroy() {
-    // Limpiar temporizadores pendientes
     for (const buffer of this.messageBuffers.values()) {
       clearTimeout(buffer.timer);
     }
     this.messageBuffers.clear();
-    await this.disconnect();
+
+    for (const [tenantId] of this.sockets) {
+      await this.disconnect(tenantId);
+    }
   }
 
-  async initializeSocket(): Promise<void> {
-    if (this.isConnecting || this.connectionStatus === SessionStatus.CONNECTED) {
+  private getAuthFolder(tenantId: string): string {
+    return path.resolve(process.cwd(), 'auth_info_baileys', tenantId);
+  }
+
+  async initializeSocket(tenantId: string): Promise<void> {
+    const isConnecting = this.isConnectingMap.get(tenantId) || false;
+    const currentStatus = this.connectionStatuses.get(tenantId) || SessionStatus.DISCONNECTED;
+
+    if (isConnecting || currentStatus === SessionStatus.CONNECTED) {
       return;
     }
 
-    this.isConnecting = true;
-    this.connectionStatus = SessionStatus.CONNECTING;
-    this.wsGateway.emitConnectionStatus(SessionStatus.CONNECTING);
-    await this.sessionRepo.updateStatus(SessionStatus.CONNECTING);
+    this.isConnectingMap.set(tenantId, true);
+    this.connectionStatuses.set(tenantId, SessionStatus.CONNECTING);
+    this.wsGateway.emitConnectionStatus(SessionStatus.CONNECTING, null, tenantId);
+    await this.sessionRepo.updateStatus(tenantId, SessionStatus.CONNECTING);
+
+    const authFolder = this.getAuthFolder(tenantId);
 
     try {
-      if (!fs.existsSync(this.authFolder)) {
-        fs.mkdirSync(this.authFolder, { recursive: true });
-      }
+      await fsPromises.mkdir(authFolder, { recursive: true });
 
-      const { state, saveCreds } = await useMultiFileAuthState(this.authFolder);
+      const { state, saveCreds } = await useMultiFileAuthState(authFolder);
       const pinoLogger = pino({ level: 'silent' });
 
-      this.socket = makeWASocket({
+      const socket = makeWASocket({
         auth: state,
         logger: pinoLogger as any,
         printQRInTerminal: false,
-        browser: ['WSP Flow', 'Chrome', '1.0.0'],
+        browser: ['WSP Flow SaaS', 'Chrome', '124.0.0.0'],
         syncFullHistory: false,
         generateHighQualityLinkPreview: true,
       });
 
-      this.socket.ev.on('creds.update', saveCreds);
+      this.sockets.set(tenantId, socket);
+      socket.ev.on('creds.update', saveCreds);
 
-      this.socket.ev.on('connection.update', async (update) => {
+      socket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
           try {
-            this.qrCodeDataUrl = await QRCode.toDataURL(qr);
-            this.connectionStatus = SessionStatus.SCAN_QR;
-            this.wsGateway.emitQrCode(this.qrCodeDataUrl);
-            this.wsGateway.emitConnectionStatus(SessionStatus.SCAN_QR);
-            await this.sessionRepo.updateStatus(SessionStatus.SCAN_QR, this.qrCodeDataUrl);
-            this.logger.log('📲 Nuevo código QR emitido vía WebSocket al panel de Angular.');
+            const qrCodeDataUrl = await QRCode.toDataURL(qr);
+            this.qrCodeDataUrls.set(tenantId, qrCodeDataUrl);
+            this.connectionStatuses.set(tenantId, SessionStatus.SCAN_QR);
+            this.wsGateway.emitQrCode(qrCodeDataUrl, tenantId);
+            this.wsGateway.emitConnectionStatus(SessionStatus.SCAN_QR, null, tenantId);
+            await this.sessionRepo.updateStatus(tenantId, SessionStatus.SCAN_QR, qrCodeDataUrl);
+            this.logger.log(`📲 [Tenant: ${tenantId}] Nuevo código QR emitido vía WebSocket.`);
           } catch (qrErr) {
-            this.logger.error('Error generando DataURL del QR:', qrErr);
+            this.logger.error(`[Tenant: ${tenantId}] Error generando DataURL del QR:`, qrErr);
           }
         }
 
         if (connection === 'close') {
-          this.isConnecting = false;
+          this.isConnectingMap.set(tenantId, false);
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
           this.logger.warn(
-            `🔌 Conexión Baileys cerrada. Código: ${statusCode}, Reintentar: ${shouldReconnect}`,
+            `🔌 [Tenant: ${tenantId}] Conexión Baileys cerrada. Código: ${statusCode}, Reintentar: ${shouldReconnect}`,
           );
-          this.connectionStatus = SessionStatus.DISCONNECTED;
-          this.qrCodeDataUrl = null;
-          this.botPhoneNumber = null;
-          this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED);
-          await this.sessionRepo.updateStatus(SessionStatus.DISCONNECTED, null, null);
+          this.connectionStatuses.set(tenantId, SessionStatus.DISCONNECTED);
+          this.qrCodeDataUrls.set(tenantId, null);
+          this.botPhoneNumbers.set(tenantId, null);
+          this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED, null, tenantId);
+          await this.sessionRepo.updateStatus(tenantId, SessionStatus.DISCONNECTED, null, null);
 
           if (shouldReconnect) {
-            this.logger.log('🔄 Reintentando reconexión en 5 segundos...');
-            setTimeout(() => this.initializeSocket(), 5000);
+            this.logger.log(`🔄 [Tenant: ${tenantId}] Reintentando reconexión en 5 segundos...`);
+            setTimeout(() => this.initializeSocket(tenantId), 5000);
           } else {
-            this.logger.warn('🚫 Sesión cerrada permanentemente (Logged out). Eliminando credenciales...');
-            this.clearAuthData();
+            this.logger.warn(`🚫 [Tenant: ${tenantId}] Sesión cerrada permanentemente (Logged out).`);
+            this.clearAuthData(tenantId);
           }
         } else if (connection === 'open') {
-          this.isConnecting = false;
-          this.connectionStatus = SessionStatus.CONNECTED;
-          this.qrCodeDataUrl = null;
+          this.isConnectingMap.set(tenantId, false);
+          this.connectionStatuses.set(tenantId, SessionStatus.CONNECTED);
+          this.qrCodeDataUrls.set(tenantId, null);
 
-          const rawUser = this.socket?.user?.id || '';
-          this.botPhoneNumber = rawUser.split(':')[0] || rawUser.split('@')[0];
+          const rawUser = socket?.user?.id || '';
+          const botPhoneNumber = rawUser.split(':')[0] || rawUser.split('@')[0];
+          this.botPhoneNumbers.set(tenantId, botPhoneNumber);
 
-          this.logger.log(`✅ ¡WhatsApp Conectado exitosamente! Número: ${this.botPhoneNumber}`);
-          this.wsGateway.emitConnectionStatus(SessionStatus.CONNECTED, this.botPhoneNumber);
-          await this.sessionRepo.updateStatus(SessionStatus.CONNECTED, null, this.botPhoneNumber);
+          this.logger.log(`✅ [Tenant: ${tenantId}] ¡WhatsApp Conectado! Número: ${botPhoneNumber}`);
+          this.wsGateway.emitConnectionStatus(SessionStatus.CONNECTED, botPhoneNumber, tenantId);
+          await this.sessionRepo.updateStatus(tenantId, SessionStatus.CONNECTED, null, botPhoneNumber);
         }
       });
 
-      // Manejo de mensajes entrantes con Buffer de Debounce (10 Segundos) y Anti-Ban
-      this.socket.ev.on('messages.upsert', async (m) => {
+      // Manejo de mensajes entrantes
+      socket.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
 
         for (const msg of m.messages) {
           if (msg.key.fromMe || !msg.message) continue;
 
-          // Ignorar mensajes de grupos y broadcasts
-          const remoteJid = msg.key.remoteJid || '';
-          if (remoteJid.endsWith('@g.us') || remoteJid === 'status@broadcast') continue;
+          const rawRemoteJid = msg.key.remoteJid || '';
+          if (rawRemoteJid.endsWith('@g.us') || rawRemoteJid === 'status@broadcast') continue;
 
-          const customerPhone = remoteJid.replace('@s.whatsapp.net', '');
+          const senderPn = (msg.key as any)?.senderPn || (msg.key as any)?.participantPn || '';
+          let remoteJid = rawRemoteJid;
+          let customerPhone = rawRemoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+
+          if (senderPn) {
+            const cleanPn = senderPn.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+            if (cleanPn.length >= 8) {
+              customerPhone = cleanPn;
+              remoteJid = `${cleanPn}@s.whatsapp.net`;
+            }
+          }
+
           const customerName = msg.pushName || 'Cliente WhatsApp';
 
-          // Extraer texto o ubicación GPS (Pin de WhatsApp)
           const location = msg.message.locationMessage || msg.message.liveLocationMessage;
+          const audio = msg.message.audioMessage;
           let textContent =
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
             msg.message.imageMessage?.caption ||
             '';
+
+          // Transcripción de Audio con Whisper AI
+          if (audio) {
+            try {
+              const buffer = await downloadMediaMessage(
+                msg,
+                'buffer',
+                {},
+                {
+                  logger: pino({ level: 'silent' }),
+                  reuploadRequest: socket.updateMediaMessage,
+                },
+              );
+
+              if (buffer && buffer.length > 0) {
+                const transcribed = await this.aiService.transcribeAudio(
+                  buffer,
+                  audio.mimetype || undefined,
+                );
+                if (transcribed) {
+                  textContent = `🎙️ [Nota de voz]: "${transcribed}"`;
+                } else {
+                  textContent = '🎙️ [Nota de voz recibida]';
+                }
+              }
+            } catch (audioErr: any) {
+              this.logger.error(`[Tenant: ${tenantId}] Error audio: ${audioErr.message}`);
+              textContent = '🎙️ [Nota de voz recibida]';
+            }
+          }
 
           if (location && location.degreesLatitude && location.degreesLongitude) {
             try {
@@ -189,10 +261,14 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
 
           if (!textContent) continue;
 
-          // 1. Registrar o recuperar sesión de chat
-          const chatSession = await this.chatRepo.findOrCreateSession(customerPhone, customerName);
+          // 1. Guardar o recuperar chat session del tenant
+          const chatSession = await this.chatRepo.findOrCreateSession(
+            tenantId,
+            customerPhone,
+            customerName,
+          );
 
-          // 2. Guardar mensaje entrante del cliente inmediatamente en base de datos
+          // 2. Guardar mensaje
           const savedMsg = await this.chatRepo.saveMessage({
             chatSessionId: chatSession.id,
             sender: MessageSender.CUSTOMER,
@@ -201,170 +277,181 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
             whatsappMsgId: msg.key.id || undefined,
           });
 
-          // Notificar mensaje al Live Chat del panel de administración en tiempo real (0ms)
           this.wsGateway.emitNewChatMessage({
             ...savedMsg,
+            tenantId,
             customerPhone,
             customerName,
           });
 
-          // 3. Procesar respuesta automática mediante Buffer de Debounce si el bot está activo
-          if (chatSession.isBotActive && this.socket) {
-            this.scheduleDebouncedResponse(customerPhone, customerName, textContent, chatSession.id, remoteJid, msg.key);
+          // 3. Debounce para respuesta del Bot
+          if (chatSession.isBotActive && this.sockets.has(tenantId)) {
+            this.scheduleDebouncedResponse(
+              tenantId,
+              customerPhone,
+              customerName,
+              textContent,
+              chatSession.id,
+              remoteJid,
+              msg.key,
+              msg,
+            );
           }
         }
       });
     } catch (error) {
-      this.isConnecting = false;
-      this.connectionStatus = SessionStatus.DISCONNECTED;
-      this.logger.error('Error inicializando Baileys:', error);
-      this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED);
-      await this.sessionRepo.updateStatus(SessionStatus.DISCONNECTED);
+      this.isConnectingMap.set(tenantId, false);
+      this.connectionStatuses.set(tenantId, SessionStatus.DISCONNECTED);
+      this.logger.error(`[Tenant: ${tenantId}] Error inicializando Baileys:`, error);
+      this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED, null, tenantId);
+      await this.sessionRepo.updateStatus(tenantId, SessionStatus.DISCONNECTED);
     }
   }
 
-  /**
-   * Programa la respuesta con debounce de 10 segundos. Si el usuario envía otro mensaje antes de los 10s,
-   * el temporizador se reinicia para esperar a que termine de escribir.
-   */
   private scheduleDebouncedResponse(
+    tenantId: string,
     customerPhone: string,
     customerName: string,
     messageText: string,
     chatSessionId: string,
     remoteJid: string,
     messageKey: any,
+    rawMessage?: any,
   ) {
-    const existing = this.messageBuffers.get(customerPhone);
+    const bufferKey = `${tenantId}:${customerPhone}`;
+    const existing = this.messageBuffers.get(bufferKey);
 
     if (existing) {
-      // Si ya hay un temporizador activo, cancelarlo y acumular el nuevo texto
       clearTimeout(existing.timer);
       existing.messages.push(messageText);
       existing.lastMessageKey = messageKey;
-      this.logger.log(`⏳ [Debounce] Mensaje adicional de [${customerPhone}]. Total acumulados: ${existing.messages.length}. Reiniciando espera de 10s...`);
+      if (rawMessage) existing.rawMessage = rawMessage;
 
       existing.timer = setTimeout(() => {
-        this.processBufferedMessages(customerPhone);
-      }, 10000); // 10 segundos
+        this.processBufferedMessages(bufferKey);
+      }, 10000);
     } else {
-      // Iniciar nuevo buffer con timer de 10 segundos
-      this.logger.log(`⏳ [Debounce] Primer mensaje de [${customerPhone}]. Iniciando buffer de 10s...`);
       const timer = setTimeout(() => {
-        this.processBufferedMessages(customerPhone);
-      }, 10000); // 10 segundos
+        this.processBufferedMessages(bufferKey);
+      }, 10000);
 
-      this.messageBuffers.set(customerPhone, {
+      this.messageBuffers.set(bufferKey, {
         timer,
         messages: [messageText],
+        tenantId,
         customerPhone,
         customerName,
         chatSessionId,
         remoteJid,
         lastMessageKey: messageKey,
+        rawMessage,
       });
     }
   }
 
-  /**
-   * Procesa y despacha todos los mensajes acumulados en un solo bloque coherente
-   */
-  private async processBufferedMessages(customerPhone: string) {
-    const buffer = this.messageBuffers.get(customerPhone);
-    if (!buffer || !this.socket) return;
+  private async processBufferedMessages(bufferKey: string) {
+    const buffer = this.messageBuffers.get(bufferKey);
+    if (!buffer) return;
 
-    this.messageBuffers.delete(customerPhone);
+    const socket = this.sockets.get(buffer.tenantId);
+    if (!socket) return;
 
-    // Concatenar todos los fragmentos acumulados
+    this.messageBuffers.delete(bufferKey);
     const fullText = buffer.messages.join(' \n ');
-    this.logger.log(`🚀 [Debounce Finalizado] Procesando bloque consolidado de [${customerPhone}] (${buffer.messages.length} mensajes): "${fullText}"`);
 
     try {
-      // Anti-Ban: 1. Marcar mensaje como leído
       if (buffer.lastMessageKey) {
         try {
-          await this.socket.readMessages([buffer.lastMessageKey]);
-        } catch (e) {
-          // ignore
-        }
+          await socket.readMessages([buffer.lastMessageKey]);
+        } catch (e) {}
       }
 
-      // Anti-Ban: 2. Calcular retardo humano aleatorio
-      const config = await this.configRepo.getConfig();
+      const config = await this.configRepo.getConfig(buffer.tenantId);
       const minDelay = config.antiBanDelayMinMs || 1500;
       const maxDelay = config.antiBanDelayMaxMs || 3500;
       const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
 
-      // Anti-Ban: 3. Simular presencia "escribiendo..." (composing)
-      await this.socket.presenceSubscribe(buffer.remoteJid);
-      await this.socket.sendPresenceUpdate('composing', buffer.remoteJid);
+      try {
+        await socket.presenceSubscribe(buffer.remoteJid);
+        await socket.sendPresenceUpdate('composing', buffer.remoteJid);
+      } catch (e) {}
 
       const result = await this.flowHandler.handleIncomingMessage(
+        buffer.tenantId,
         buffer.customerPhone,
         buffer.customerName,
         fullText,
         buffer.chatSessionId,
       );
 
-      // Esperar delay humano de tipeo
       await new Promise((r) => setTimeout(r, randomDelay));
-      await this.socket.sendPresenceUpdate('paused', buffer.remoteJid);
+      try {
+        await socket.sendPresenceUpdate('paused', buffer.remoteJid);
+      } catch (e) {}
 
-      // Despacho de documento PDF
       if (result?.documentPath && fs.existsSync(result.documentPath)) {
-        await this.socket.sendMessage(buffer.remoteJid, {
-          document: fs.readFileSync(result.documentPath),
-          mimetype: 'application/pdf',
-          fileName: result.documentFileName || 'Catalogo_WSP_Flow.pdf',
-          caption: result.replyText || '📄 *Catálogo Oficial de Productos*',
-        });
+        try {
+          const pdfBuffer = await fsPromises.readFile(result.documentPath);
+          const sent = await socket.sendMessage(buffer.remoteJid, {
+            document: pdfBuffer,
+            mimetype: 'application/pdf',
+            fileName: result.documentFileName || 'Catalogo_Productos.pdf',
+            caption: result.replyText || '📄 *Catálogo Oficial de Productos*',
+          });
+        } catch (pdfErr: any) {
+          this.logger.error(`Error enviando PDF: ${pdfErr.message}`);
+        }
 
         await this.chatRepo.saveMessage({
           chatSessionId: buffer.chatSessionId,
           sender: MessageSender.BOT,
           senderName: 'Bot WSP',
-          content: `[Archivo PDF enviado: ${result.documentFileName || 'Catalogo_WSP_Flow.pdf'}] - ${result.replyText || ''}`,
+          content: `[Archivo PDF enviado: ${result.documentFileName || 'Catalogo_Productos.pdf'}] - ${result.replyText || ''}`,
         });
-      }
-      // Despacho de imagen o video de producto
-      else if (result?.mediaUrl) {
+      } else if (result?.mediaUrl) {
         await this.dispatchMediaMessage(
+          buffer.tenantId,
           buffer.remoteJid,
           result.mediaUrl,
           result.mediaType || 'image',
           result.caption || result.replyText,
           buffer.chatSessionId,
         );
-      }
-      // Despacho de texto estándar
-      else if (result?.replyText) {
-        await this.sendMessageDirect(buffer.remoteJid, result.replyText, MessageSender.BOT, buffer.chatSessionId);
+      } else if (result?.replyText) {
+        await this.sendMessageDirect(
+          buffer.tenantId,
+          buffer.remoteJid,
+          result.replyText,
+          MessageSender.BOT,
+          buffer.chatSessionId,
+        );
       }
     } catch (err: any) {
-      this.logger.error(`Error procesando bloque de mensajes para [${customerPhone}]:`, err.message);
+      this.logger.error(`Error procesando bloque para [${buffer.customerPhone}]:`, err.message);
     }
   }
 
-  /**
-   * Despacha un archivo multimedia (imagen o video) al chat de WhatsApp
-   */
   async dispatchMediaMessage(
+    tenantId: string,
     remoteJid: string,
     mediaUrl: string,
     mediaType: 'image' | 'video' | 'document',
     caption: string = '',
     chatSessionId: string,
   ) {
-    if (!this.socket) return;
+    const socket = this.sockets.get(tenantId);
+    if (!socket) {
+      this.logger.warn(`⚠️ Socket no disponible para tenant ${tenantId}`);
+      return;
+    }
 
     try {
       let buffer: Buffer;
-
       if (mediaUrl.includes('/uploads/')) {
         const relativePath = mediaUrl.split('/uploads/')[1];
         const localPath = path.resolve(process.cwd(), 'uploads', relativePath);
         if (fs.existsSync(localPath)) {
-          buffer = fs.readFileSync(localPath);
+          buffer = await fsPromises.readFile(localPath);
         } else {
           const resp = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
           buffer = Buffer.from(resp.data);
@@ -374,14 +461,15 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
         buffer = Buffer.from(resp.data);
       }
 
+      let sent: any;
       if (mediaType === 'video') {
-        await this.socket.sendMessage(remoteJid, {
+        sent = await socket.sendMessage(remoteJid, {
           video: buffer,
           caption,
           mimetype: 'video/mp4',
         });
       } else {
-        await this.socket.sendMessage(remoteJid, {
+        sent = await socket.sendMessage(remoteJid, {
           image: buffer,
           caption,
         });
@@ -396,39 +484,60 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
         mediaType,
       });
 
-      const phone = remoteJid.replace('@s.whatsapp.net', '');
+      const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
       this.wsGateway.emitNewChatMessage({
         ...savedMsg,
+        tenantId,
         customerPhone: phone,
       });
     } catch (err: any) {
-      this.logger.error(`Error enviando multimedia a WhatsApp (${mediaUrl}):`, err.message);
-      await this.sendMessageDirect(remoteJid, caption, MessageSender.BOT, chatSessionId);
+      this.logger.error(`Error enviando multimedia (${mediaUrl}): ${err.message}`);
+      await this.sendMessageDirect(tenantId, remoteJid, caption, MessageSender.BOT, chatSessionId);
     }
   }
 
   private formatWhatsAppText(text: string): string {
     if (!text) return '';
     return text
-      // Convert standard markdown bold **bold** to WhatsApp *bold*
       .replace(/\*\*(.*?)\*\*/g, '*$1*')
-      // Convert stray dollar signs $99.00 to Peruvian Soles S/ 99.00
+      .replace(/`\s*(https?:\/\/[^\s`]+)\s*`/g, '$1')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1: $2')
       .replace(/\$(\s*\d+(\.\d+)?)/g, 'S/ $1');
   }
 
-  async sendManualMessage(customerPhone: string, text: string, senderName = 'Agente'): Promise<any> {
-    const formattedPhone = customerPhone.replace(/\D/g, '');
-    const remoteJid = `${formattedPhone}@s.whatsapp.net`;
+  async sendManualMessage(
+    tenantId: string,
+    customerPhone: string,
+    text: string,
+    senderName = 'Agente',
+  ): Promise<any> {
+    let remoteJid: string;
+    let formattedPhone: string;
+
+    if (customerPhone.includes('@')) {
+      remoteJid = customerPhone;
+      formattedPhone = customerPhone.split('@')[0];
+    } else if (customerPhone.length >= 13 && !customerPhone.startsWith('51')) {
+      remoteJid = `${customerPhone}@lid`;
+      formattedPhone = customerPhone;
+    } else {
+      formattedPhone = customerPhone.replace(/\D/g, '');
+      if (formattedPhone.length === 9 && formattedPhone.startsWith('9')) {
+        formattedPhone = `51${formattedPhone}`;
+      }
+      remoteJid = `${formattedPhone}@s.whatsapp.net`;
+    }
     const cleanText = this.formatWhatsAppText(text);
 
-    const chatSession = await this.chatRepo.findOrCreateSession(formattedPhone);
+    const chatSession = await this.chatRepo.findOrCreateSession(tenantId, formattedPhone);
+    const socket = this.sockets.get(tenantId);
+    const status = this.connectionStatuses.get(tenantId);
 
-    if (this.socket && this.connectionStatus === SessionStatus.CONNECTED) {
+    if (socket && status === SessionStatus.CONNECTED) {
       try {
-        await this.socket.sendMessage(remoteJid, { text: cleanText });
-        this.logger.log(`📤 Mensaje manual enviado por WhatsApp a [${formattedPhone}]`);
+        await socket.sendMessage(remoteJid, { text: cleanText });
       } catch (err: any) {
-        this.logger.error(`Error enviando mensaje WhatsApp a ${formattedPhone}: ${err.message}`);
+        this.logger.error(`Error enviando mensaje manual a ${formattedPhone}: ${err.message}`);
       }
     }
 
@@ -441,6 +550,7 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
 
     this.wsGateway.emitNewChatMessage({
       ...savedMsg,
+      tenantId,
       customerPhone: formattedPhone,
       customerName: chatSession.customerName,
     });
@@ -448,10 +558,23 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
     return savedMsg;
   }
 
-  private async sendMessageDirect(remoteJid: string, text: string, sender: MessageSender, chatSessionId: string) {
-    if (!this.socket) return;
+  private async sendMessageDirect(
+    tenantId: string,
+    remoteJid: string,
+    text: string,
+    sender: MessageSender,
+    chatSessionId: string,
+  ) {
+    const socket = this.sockets.get(tenantId);
+    if (!socket) return;
+
     const cleanText = this.formatWhatsAppText(text);
-    await this.socket.sendMessage(remoteJid, { text: cleanText });
+
+    try {
+      await socket.sendMessage(remoteJid, { text: cleanText });
+    } catch (err: any) {
+      this.logger.error(`Error en socket.sendMessage a [${remoteJid}]: ${err.message}`);
+    }
 
     const savedMsg = await this.chatRepo.saveMessage({
       chatSessionId,
@@ -460,46 +583,68 @@ export class BaileysService implements OnModuleInit, OnModuleDestroy {
       content: cleanText,
     });
 
-    const phone = remoteJid.replace('@s.whatsapp.net', '');
+    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
     this.wsGateway.emitNewChatMessage({
       ...savedMsg,
+      tenantId,
       customerPhone: phone,
     });
   }
 
-  async disconnect(): Promise<void> {
-    if (this.socket) {
+  async disconnect(tenantId: string): Promise<void> {
+    const socket = this.sockets.get(tenantId);
+    if (socket) {
       try {
-        await this.socket.end(undefined);
-      } catch (e) {
-        // ignore
-      }
-      this.socket = null;
+        await socket.end(undefined);
+      } catch (e) {}
+      this.sockets.delete(tenantId);
     }
-    this.connectionStatus = SessionStatus.DISCONNECTED;
-    this.qrCodeDataUrl = null;
-    this.botPhoneNumber = null;
-    this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED);
-    await this.sessionRepo.updateStatus(SessionStatus.DISCONNECTED, null, null);
+    this.connectionStatuses.set(tenantId, SessionStatus.DISCONNECTED);
+    this.qrCodeDataUrls.set(tenantId, null);
+    this.botPhoneNumbers.set(tenantId, null);
+    this.wsGateway.emitConnectionStatus(SessionStatus.DISCONNECTED, null, tenantId);
+    await this.sessionRepo.updateStatus(tenantId, SessionStatus.DISCONNECTED, null, null);
   }
 
-  async logout(): Promise<void> {
-    await this.disconnect();
-    this.clearAuthData();
+  async logout(tenantId: string): Promise<void> {
+    await this.disconnect(tenantId);
+    this.clearAuthData(tenantId);
   }
 
-  getStatus() {
+  getStatus(tenantId: string) {
     return {
-      status: this.connectionStatus,
-      qrCode: this.qrCodeDataUrl,
-      phoneNumber: this.botPhoneNumber,
+      status: this.connectionStatuses.get(tenantId) || SessionStatus.DISCONNECTED,
+      qrCode: this.qrCodeDataUrls.get(tenantId) || null,
+      phoneNumber: this.botPhoneNumbers.get(tenantId) || null,
     };
   }
 
-  private clearAuthData() {
-    if (fs.existsSync(this.authFolder)) {
-      fs.rmSync(this.authFolder, { recursive: true, force: true });
-      this.logger.log('🧹 Directorio auth_info_baileys limpiado.');
+  async restartTenantSocket(tenantId: string): Promise<void> {
+    this.logger.log(`🔄 [SuperAdmin] Forzando reinicio de socket para tenant: ${tenantId}`);
+    await this.disconnect(tenantId);
+    this.clearAuthData(tenantId);
+    setTimeout(() => {
+      this.initializeSocket(tenantId);
+    }, 1500);
+  }
+
+  getAllSocketsStatus() {
+    const list: Array<{ tenantId: string; status: SessionStatus; phoneNumber: string | null }> = [];
+    for (const [tenantId, status] of this.connectionStatuses.entries()) {
+      list.push({
+        tenantId,
+        status,
+        phoneNumber: this.botPhoneNumbers.get(tenantId) || null,
+      });
+    }
+    return list;
+  }
+
+  private clearAuthData(tenantId: string) {
+    const authFolder = this.getAuthFolder(tenantId);
+    if (fs.existsSync(authFolder)) {
+      fs.rmSync(authFolder, { recursive: true, force: true });
+      this.logger.log(`🧹 Directorio de auth para tenant ${tenantId} limpiado.`);
     }
   }
 }

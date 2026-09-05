@@ -1,5 +1,6 @@
 export class CompanyConfigEntity {
   id: string;
+  tenantId: string;
   companyName: string;
   businessDescription: string;
   systemPrompt: string;
@@ -19,6 +20,7 @@ export class CompanyConfigEntity {
   deliveryZone3Price?: number;
   deliveryProvincePrice?: number;
   freeShippingThreshold?: number;
+  storeTheme?: string;  // JSON-serialized StoreThemeConfig
   updatedAt: Date;
   createdAt: Date;
 

@@ -1,6 +1,6 @@
 import { CompanyConfigEntity } from '../entities/company-config.entity';
 
 export interface ICompanyConfigRepository {
-  getConfig(): Promise<CompanyConfigEntity>;
-  updateConfig(data: Partial<CompanyConfigEntity>): Promise<CompanyConfigEntity>;
+  getConfig(tenantId?: string): Promise<CompanyConfigEntity>;
+  updateConfig(tenantId: string, data: Partial<CompanyConfigEntity>): Promise<CompanyConfigEntity>;
 }

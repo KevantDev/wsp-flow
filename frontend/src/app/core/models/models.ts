@@ -1,10 +1,146 @@
 export enum Role {
+  SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
   SUBADMIN = 'SUBADMIN',
 }
 
+export enum TenantPlan {
+  FREE_TRIAL = 'FREE_TRIAL',
+  BASIC = 'BASIC',
+  PRO = 'PRO',
+  ENTERPRISE = 'ENTERPRISE',
+}
+
+export enum TenantStatus {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  PENDING_PAYMENT = 'PENDING_PAYMENT',
+}
+
+export interface SaaSPlan {
+  id: string;
+  code: TenantPlan;
+  name: string;
+  description?: string;
+  price: number;
+  currency: string;
+  billingPeriod: string;
+  maxProducts: number;
+  maxBroadcasts: number;
+  maxUsers: number;
+  hasMercadoPago: boolean;
+  hasAiBot: boolean;
+  hasCustomThemes: boolean;
+  hasPdfCatalog: boolean;
+  features: string[];
+  badgeColor: string;
+  isPopular: boolean;
+  isActive: boolean;
+  tenantsCount?: number;
+}
+
+export interface TenantQuota {
+  tenantId: string;
+  planCode: TenantPlan;
+  planName: string;
+  products: {
+    used: number;
+    max: number;
+    isUnlimited: boolean;
+  };
+  broadcasts: {
+    max: number;
+    isUnlimited: boolean;
+  };
+  users: {
+    used: number;
+    max: number;
+    isUnlimited: boolean;
+  };
+  features: {
+    hasMercadoPago: boolean;
+    hasAiBot: boolean;
+    hasCustomThemes: boolean;
+    hasPdfCatalog: boolean;
+  };
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string;
+  plan: TenantPlan;
+  status: TenantStatus;
+  maxProducts: number;
+  maxBroadcasts: number;
+  culqiPublicKey?: string;
+  mpPublicKey?: string;
+  mpAccessToken?: string;
+  mpRefreshToken?: string;
+  mpUserId?: string;
+  mpConnectedAt?: string;
+  createdAt: string;
+}
+
+export interface EnrichedTenant {
+  id: string;
+  name: string;
+  slug: string;
+  plan: TenantPlan;
+  status: TenantStatus;
+  logoUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  owner?: {
+    id: string;
+    name: string;
+    email: string;
+    phone?: string;
+    avatarUrl?: string;
+  } | null;
+  metrics: {
+    productCount: number;
+    maxProducts: number;
+    orderCount: number;
+    chatCount: number;
+    userCount: number;
+    totalGmv: number;
+  };
+  whatsapp: {
+    status: 'CONNECTED' | 'QR_READY' | 'DISCONNECTED';
+    phoneNumber?: string | null;
+    lastActivity?: string | null;
+  };
+}
+
+export interface AdminMetrics {
+  totalTenants: number;
+  activeTenants: number;
+  trialTenants: number;
+  suspendedTenants: number;
+  planDistribution: {
+    freeTrial: number;
+    pro: number;
+    enterprise: number;
+  };
+  financials: {
+    mrr: number;
+    arr: number;
+    totalGmv: number;
+    currency: string;
+  };
+  stats: {
+    totalProducts: number;
+    totalOrders: number;
+    totalUsers: number;
+    connectedWhatsAppSessions: number;
+  };
+}
+
 export interface User {
   id: string;
+  tenantId?: string;
   email: string;
   fullName: string;
   phoneNumber?: string;
@@ -17,6 +153,16 @@ export interface User {
 export interface AuthResponse {
   accessToken: string;
   user: User;
+}
+
+export interface RegisterStoreDto {
+  storeName: string;
+  slug?: string;
+  ownerName: string;
+  email: string;
+  password: string;
+  phoneNumber?: string;
+  plan?: TenantPlan;
 }
 
 export interface Category {
@@ -53,10 +199,58 @@ export interface Product {
   createdAt?: string;
 }
 
+export interface StoreThemeConfig {
+  templateId: 'dark-tech' | 'light-minimal' | 'warm-brand';
+  accentColor: string;   // CSS color value e.g. '#10b981'
+  fontFamily: string;    // 'geist' | 'outfit' | 'inter' | 'playfair' | 'jakarta'
+  productLayout: 'grid-2' | 'grid-3' | 'grid-4' | 'list';
+
+  // Landing Page Header & Announcement Bar
+  announcementText?: string;
+  showAnnouncement?: boolean;
+
+  // Landing Page Hero Section
+  heroBadge?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  heroBannerUrl?: string;
+  heroCtaText?: string;
+  heroSecondaryCtaText?: string;
+
+  // Trust / Value Props Strip (4 items)
+  trustBadge1Title?: string;
+  trustBadge1Desc?: string;
+  trustBadge2Title?: string;
+  trustBadge2Desc?: string;
+  trustBadge3Title?: string;
+  trustBadge3Desc?: string;
+  trustBadge4Title?: string;
+  trustBadge4Desc?: string;
+
+  // Featured Promotional Banner Section
+  promoBannerActive?: boolean;
+  promoBadge?: string;
+  promoTitle?: string;
+  promoSubtitle?: string;
+  promoImageUrl?: string;
+  promoCtaText?: string;
+
+  // Social Proof & FAQ
+  showReviews?: boolean;
+  showFaq?: boolean;
+
+  // Checkout & Buying Experience
+  purchaseMode?: 'both' | 'whatsapp' | 'cart';
+  whatsappCustomMessage?: string;
+}
+
 export interface CompanyConfig {
   id?: string;
+  tenantId?: string;
   companyName: string;
   businessDescription: string;
+  phone?: string;
+  email?: string;
   systemPrompt: string;
   shippingPolicy: string;
   paymentMethods: string;
@@ -74,6 +268,7 @@ export interface CompanyConfig {
   deliveryZone3Price?: number;
   deliveryProvincePrice?: number;
   freeShippingThreshold?: number;
+  storeTheme?: string;  // JSON-serialized StoreThemeConfig
   createdAt?: string;
   updatedAt?: string;
 }
@@ -112,6 +307,10 @@ export interface Order {
   subtotal: number;
   deliveryFee: number;
   total: number;
+  paymentMethod?: 'MERCADOPAGO' | 'CULQI' | 'CASH_ON_DELIVERY' | 'YAPE_DIRECT' | 'PLIN_DIRECT' | 'PENDING';
+  mercadoPagoPaymentId?: string;
+  mercadoPagoPreferenceId?: string;
+  culqiChargeId?: string;
   notes?: string;
   handledByName?: string;
   items?: OrderItem[];
@@ -168,6 +367,17 @@ export interface DashboardMetrics {
     totalOrders: number;
     pendingOrders: number;
     completedOrders: number;
+    totalCost?: number;
+    grossProfit?: number;
+    marginPercentage?: number;
+    topProfitableProducts?: Array<{
+      id?: string;
+      name: string;
+      unitsSold: number;
+      revenue: number;
+      profit: number;
+      margin: number;
+    }>;
   };
   inventory: {
     totalProducts: number;
@@ -181,3 +391,55 @@ export interface DashboardMetrics {
   recentOrders: Order[];
   whatsappStatus: WhatsAppStatus;
 }
+
+export interface BroadcastRecipient {
+  id: string;
+  campaignId: string;
+  customerPhone: string;
+  customerName?: string;
+  renderedText: string;
+  status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED';
+  errorMessage?: string;
+  sentAt?: string;
+  createdAt: string;
+}
+
+export interface BroadcastCampaign {
+  id: string;
+  title: string;
+  messageTemplate: string;
+  mediaUrl?: string;
+  attachPdfCatalog: boolean;
+  status: 'DRAFT' | 'SENDING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
+  targetSegment: 'ALL_CUSTOMERS' | 'FREQUENT_BUYERS' | 'PENDING_ORDERS' | 'RECENT_CONTACTS';
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  deliveredCount: number;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  recipients?: BroadcastRecipient[];
+}
+
+export interface CreateBroadcastCampaignDto {
+  title: string;
+  messageTemplate: string;
+  mediaUrl?: string;
+  attachPdfCatalog?: boolean;
+  targetSegment: string;
+}
+
+export interface CustomerPortfolioItem {
+  id: string;
+  customerPhone: string;
+  customerName: string;
+  totalOrders: number;
+  totalSpent: number;
+  lastOrderDate: string | null;
+  lastInteraction: string;
+  isBotActive: boolean;
+  source: 'CHAT' | 'ORDER' | 'MANUAL';
+}
+

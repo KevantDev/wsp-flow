@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { IChatRepository } from '../../../../domain/repositories/chat.repository.interface';
-import { ChatSessionEntity, ChatMessageEntity, MessageSender } from '../../../../domain/entities/chat-session.entity';
+import {
+  ChatSessionEntity,
+  ChatMessageEntity,
+  MessageSender,
+} from '../../../../domain/entities/chat-session.entity';
 
 @Injectable()
 export class PrismaChatRepository implements IChatRepository {
@@ -10,9 +14,11 @@ export class PrismaChatRepository implements IChatRepository {
   private mapSession(s: any): ChatSessionEntity {
     return new ChatSessionEntity({
       id: s.id,
+      tenantId: s.tenantId,
       customerPhone: s.customerPhone,
       customerName: s.customerName,
       isBotActive: s.isBotActive,
+      isArchived: s.isArchived,
       lastInteraction: s.lastInteraction,
       unreadCount: s.unreadCount,
       assignedUserId: s.assignedUserId,
@@ -38,23 +44,33 @@ export class PrismaChatRepository implements IChatRepository {
     });
   }
 
-  async findOrCreateSession(rawPhone: string, customerName?: string): Promise<ChatSessionEntity> {
+  async findOrCreateSession(
+    tenantId: string,
+    rawPhone: string,
+    customerName?: string,
+  ): Promise<ChatSessionEntity> {
     const customerPhone = rawPhone.replace(/\D/g, '');
-    let session = await this.prisma.chatSession.findUnique({
-      where: { customerPhone },
+    let session = await this.prisma.chatSession.findFirst({
+      where: { tenantId, customerPhone, isArchived: false },
       include: { assignedUser: true },
+      orderBy: { createdAt: 'desc' },
     });
 
     if (!session) {
       session = await this.prisma.chatSession.create({
         data: {
+          tenantId,
           customerPhone,
           customerName: customerName || 'Cliente WhatsApp',
           isBotActive: true,
         },
         include: { assignedUser: true },
       });
-    } else if (customerName && customerName !== 'Cliente WhatsApp' && session.customerName !== customerName) {
+    } else if (
+      customerName &&
+      customerName !== 'Cliente WhatsApp' &&
+      session.customerName !== customerName
+    ) {
       session = await this.prisma.chatSession.update({
         where: { id: session.id },
         data: { customerName },
@@ -65,18 +81,26 @@ export class PrismaChatRepository implements IChatRepository {
     return this.mapSession(session);
   }
 
-  async findSessionByPhone(rawPhone: string): Promise<ChatSessionEntity | null> {
+  async findSessionByPhone(tenantId: string, rawPhone: string): Promise<ChatSessionEntity | null> {
     const customerPhone = rawPhone.replace(/\D/g, '');
-    const session = await this.prisma.chatSession.findUnique({
-      where: { customerPhone },
-      include: { assignedUser: true, messages: { take: 20, orderBy: { createdAt: 'desc' } } },
+    const session = await this.prisma.chatSession.findFirst({
+      where: { tenantId, customerPhone, isArchived: false },
+      include: {
+        assignedUser: true,
+        messages: { take: 20, orderBy: { createdAt: 'desc' } },
+      },
+      orderBy: { createdAt: 'desc' },
     });
     if (!session) return null;
     return this.mapSession(session);
   }
 
-  async findAllSessions(): Promise<ChatSessionEntity[]> {
+  async findAllSessions(tenantId?: string): Promise<ChatSessionEntity[]> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+
     const sessions = await this.prisma.chatSession.findMany({
+      where,
       include: {
         assignedUser: true,
         messages: {
@@ -89,10 +113,20 @@ export class PrismaChatRepository implements IChatRepository {
     return sessions.map((s) => this.mapSession(s));
   }
 
-  async toggleBot(rawPhone: string, isBotActive: boolean): Promise<ChatSessionEntity> {
+  async toggleBot(
+    tenantId: string,
+    rawPhone: string,
+    isBotActive: boolean,
+  ): Promise<ChatSessionEntity> {
     const customerPhone = rawPhone.replace(/\D/g, '');
+    const existing = await this.prisma.chatSession.findFirst({
+      where: { tenantId, customerPhone, isArchived: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!existing)
+      throw new Error(`ChatSession no encontrada para el teléfono: ${customerPhone}`);
     const session = await this.prisma.chatSession.update({
-      where: { customerPhone },
+      where: { id: existing.id },
       data: { isBotActive },
       include: { assignedUser: true },
     });
@@ -148,16 +182,17 @@ export class PrismaChatRepository implements IChatRepository {
     limit = 30,
     offset = 0,
   ): Promise<{ messages: ChatMessageEntity[]; hasMore: boolean; total: number }> {
-    const total = await this.prisma.chatMessage.count({
-      where: { chatSessionId },
-    });
-
-    const messages = await this.prisma.chatMessage.findMany({
-      where: { chatSessionId },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    });
+    const [total, messages] = await Promise.all([
+      this.prisma.chatMessage.count({
+        where: { chatSessionId },
+      }),
+      this.prisma.chatMessage.findMany({
+        where: { chatSessionId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+    ]);
 
     return {
       messages: messages.reverse().map((m) => this.mapMessage(m)),
@@ -174,6 +209,12 @@ export class PrismaChatRepository implements IChatRepository {
     await this.prisma.chatSession.update({
       where: { id: chatSessionId },
       data: { unreadCount: 0 },
+    });
+  }
+
+  async deleteSession(chatSessionId: string): Promise<void> {
+    await this.prisma.chatSession.delete({
+      where: { id: chatSessionId },
     });
   }
 }

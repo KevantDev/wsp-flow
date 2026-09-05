@@ -1,4 +1,5 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -7,7 +8,9 @@ import { NavbarComponent } from '../../shared/components/navbar/navbar.component
 import { BentoCardComponent } from '../../shared/components/bento-card/bento-card.component';
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { OrdersService } from '../../core/services/orders.service';
+import { SocketService } from '../../core/services/socket.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
 import { Order, OrderStatus } from '../../core/models/models';
 import { environment } from '../../../environments/environment';
 
@@ -26,7 +29,7 @@ interface TodoColumn {
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, NavbarComponent, BentoCardComponent, BadgeComponent],
   template: `
-    <app-navbar title="Pipeline de Pedidos & Ventas" subtitle="Gestión interactiva To-Do, emisión de boletas en PDF, cobros con Culqi y reembolsos"></app-navbar>
+    <app-navbar title="Pipeline de Pedidos & Ventas" subtitle="Gestión interactiva To-Do, emisión de boletas en PDF, cobros con Mercado Pago y reembolsos"></app-navbar>
 
     <div class="space-y-5 mt-5 pb-14">
       
@@ -42,27 +45,27 @@ interface TodoColumn {
           <div class="px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200/70 flex items-center gap-1.5 shrink-0">
             <span class="w-2 h-2 rounded-full bg-amber-500"></span>
             <span class="text-amber-800 font-medium">Por Atender:</span>
-            <span class="font-bold text-amber-900 font-mono">{{ getOrdersByStatuses(['PENDING']).length }}</span>
+            <span class="font-bold text-amber-900 font-mono">{{ ordersByColumn()['pending'].length }}</span>
           </div>
           <div class="px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center gap-1.5 shrink-0">
             <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
             <span class="text-indigo-800 font-medium">En Preparación:</span>
-            <span class="font-bold text-indigo-900 font-mono">{{ getOrdersByStatuses(['PROCESSING', 'CONFIRMED']).length }}</span>
+            <span class="font-bold text-indigo-900 font-mono">{{ ordersByColumn()['processing'].length }}</span>
           </div>
           <div class="px-2.5 py-1.5 rounded-xl bg-purple-50 border border-purple-200/70 flex items-center gap-1.5 shrink-0">
             <span class="w-2 h-2 rounded-full bg-purple-500"></span>
             <span class="text-purple-800 font-medium">En Camino:</span>
-            <span class="font-bold text-purple-900 font-mono">{{ getOrdersByStatuses(['SHIPPED']).length }}</span>
+            <span class="font-bold text-purple-900 font-mono">{{ ordersByColumn()['shipped'].length }}</span>
           </div>
           <div class="px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/70 flex items-center gap-1.5 shrink-0">
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             <span class="text-emerald-800 font-medium">Entregados:</span>
-            <span class="font-bold text-emerald-900 font-mono">{{ getOrdersByStatuses(['DELIVERED']).length }}</span>
+            <span class="font-bold text-emerald-900 font-mono">{{ ordersByColumn()['delivered'].length }}</span>
           </div>
           <div class="px-2.5 py-1.5 rounded-xl bg-rose-50 border border-rose-200/70 flex items-center gap-1.5 shrink-0">
             <span class="w-2 h-2 rounded-full bg-rose-500"></span>
             <span class="text-rose-800 font-medium">Cancelados:</span>
-            <span class="font-bold text-rose-900 font-mono">{{ getOrdersByStatuses(['CANCELLED']).length }}</span>
+            <span class="font-bold text-rose-900 font-mono">{{ ordersByColumn()['cancelled'].length }}</span>
           </div>
         </div>
 
@@ -119,13 +122,24 @@ interface TodoColumn {
                   <h3 class="font-bold text-zinc-900 text-xs tracking-tight truncate max-w-[130px]">{{ col.title }}</h3>
                 </div>
                 <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 shadow-sm">
-                  {{ getOrdersByStatuses(col.statuses).length }}
+                  {{ (ordersByColumn()[col.key] || []).length }}
                 </span>
               </div>
 
               <!-- Cards Stream -->
               <div class="space-y-2.5 flex-1">
-                @for (order of getOrdersByStatuses(col.statuses); track order.id) {
+                @if (isLoading()) {
+                  <div class="bg-white/80 rounded-xl border border-zinc-200/60 p-3 space-y-2.5 animate-pulse">
+                    <div class="h-4 bg-zinc-200/80 rounded w-20"></div>
+                    <div class="h-10 bg-zinc-100 rounded-lg"></div>
+                    <div class="h-3 bg-zinc-200/60 rounded w-16"></div>
+                  </div>
+                  <div class="bg-white/80 rounded-xl border border-zinc-200/60 p-3 space-y-2.5 animate-pulse">
+                    <div class="h-4 bg-zinc-200/80 rounded w-24"></div>
+                    <div class="h-10 bg-zinc-100 rounded-lg"></div>
+                  </div>
+                } @else {
+                  @for (order of ordersByColumn()[col.key] || []; track order.id) {
                   <div class="bg-white rounded-xl border border-zinc-200/80 p-3 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_2px_6px_rgba(0,0,0,0.04)] hover:shadow-md hover:border-indigo-200 transition-all duration-200 space-y-2 group">
                     
                     <!-- Top Line: Order Number & Payment Status Tag -->
@@ -240,6 +254,7 @@ interface TodoColumn {
                     <span class="text-[10px]">Sin pedidos</span>
                   </div>
                 }
+              }
               </div>
 
             </div>
@@ -508,7 +523,7 @@ interface TodoColumn {
                     (click)="refundOrder(selectedOrder()!)"
                     class="px-3 py-1.5 rounded-xl text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-bold border border-rose-200 transition-colors"
                   >
-                    💸 Emitir Reembolso en Culqi
+                    💸 Emitir Reembolso (Mercado Pago)
                   </button>
                 }
               </div>
@@ -534,12 +549,27 @@ interface TodoColumn {
 })
 export class OrdersComponent implements OnInit {
   private ordersService = inject(OrdersService);
+  private socketService = inject(SocketService);
+  private destroyRef = inject(DestroyRef);
   private http = inject(HttpClient);
+  private toast = inject(ToastService);
   authService = inject(AuthService);
 
   orders = signal<Order[]>([]);
+  isLoading = signal<boolean>(true);
   viewMode = signal<'kanban' | 'list'>('kanban');
   selectedOrder = signal<Order | null>(null);
+
+  ordersByColumn = computed<Record<string, Order[]>>(() => {
+    const list = Array.isArray(this.orders()) ? this.orders() : [];
+    return {
+      pending: list.filter((o) => o && ['PENDING'].includes(o.status as any)),
+      processing: list.filter((o) => o && ['PROCESSING', 'CONFIRMED'].includes(o.status as any)),
+      shipped: list.filter((o) => o && ['SHIPPED'].includes(o.status as any)),
+      delivered: list.filter((o) => o && ['DELIVERED'].includes(o.status as any)),
+      cancelled: list.filter((o) => o && ['CANCELLED'].includes(o.status as any)),
+    };
+  });
 
   columns: TodoColumn[] = [
     {
@@ -587,11 +617,43 @@ export class OrdersComponent implements OnInit {
 
   ngOnInit() {
     this.loadOrders();
+    this.listenWebSockets();
+  }
+
+  private listenWebSockets() {
+    // ⚡ Reactividad en tiempo real: Nuevos pedidos desde WhatsApp Bot o Tienda Web
+    this.socketService.onNewOrder$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((newOrder: Order) => {
+        if (!newOrder) return;
+        this.orders.update((list) => {
+          if (list.some((o) => o.id === newOrder.id)) return list;
+          return [newOrder, ...list];
+        });
+        this.toast.info(
+          `🔔 ¡Nuevo Pedido Recibido!\n#${newOrder.orderNumber} - ${newOrder.customerName} (S/ ${(newOrder.total || 0).toFixed(2)})`,
+        );
+      });
+
+    // ⚡ Reactividad en tiempo real: Actualización de estados y pagos
+    this.socketService.onOrderUpdated$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((updated: Order) => {
+        if (!updated) return;
+        this.orders.update((list) =>
+          list.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)),
+        );
+        if (this.selectedOrder()?.id === updated.id) {
+          this.selectedOrder.update((curr) => (curr ? { ...curr, ...updated } : null));
+        }
+      });
   }
 
   loadOrders() {
+    this.isLoading.set(true);
     this.ordersService.getOrders().subscribe({
       next: (data: any) => {
+        this.isLoading.set(false);
         const list = Array.isArray(data)
           ? data
           : data?.orders && Array.isArray(data.orders)
@@ -606,6 +668,7 @@ export class OrdersComponent implements OnInit {
         }
       },
       error: (err) => {
+        this.isLoading.set(false);
         console.error('Error cargando pedidos:', err);
         this.orders.set([]);
       },
@@ -638,33 +701,49 @@ export class OrdersComponent implements OnInit {
     this.ordersService.updateOrderStatus(order.id, newStatus).subscribe({
       next: (updated) => {
         order.status = updated.status;
+        this.toast.success(`Estado actualizado a: ${newStatus}`);
         this.loadOrders();
+      },
+      error: (err) => {
+        this.toast.error(err.error?.message || 'Error al actualizar estado del pedido.');
       },
     });
   }
 
-  cancelOrder(order: Order) {
-    if (confirm(`¿Estás seguro de cancelar el pedido #${order.orderNumber} de ${order.customerName}? Se restaurará el stock a la base de datos.`)) {
+  async cancelOrder(order: Order) {
+    const confirmed = await this.toast.confirm({
+      title: 'Cancelar Pedido',
+      message: `¿Estás seguro de cancelar el pedido #${order.orderNumber} de ${order.customerName}?\nSe restaurará el inventario a la base de datos automáticamente.`,
+      confirmText: 'Sí, Cancelar Pedido',
+      type: 'danger',
+    });
+
+    if (confirmed) {
       this.onStatusChange(order, OrderStatus.CANCELLED);
     }
   }
 
-  refundOrder(order: Order) {
-    const reason = prompt(
-      `¿Deseas procesar el reembolso en Culqi para la orden #${order.orderNumber} por S/ ${order.total.toFixed(2)} PEN?\n\nIngresa el motivo del reembolso:`,
-      'Cancelación solicitada por el cliente',
-    );
+  async refundOrder(order: Order) {
+    const confirmed = await this.toast.confirm({
+      title: 'Procesar Reembolso (Mercado Pago)',
+      message: `¿Deseas procesar el reembolso en la pasarela para la orden #${order.orderNumber} por S/ ${order.total.toFixed(2)} PEN?`,
+      confirmText: 'Procesar Reembolso',
+      cancelText: 'Volver',
+      type: 'warning',
+    });
 
-    if (reason !== null) {
+    if (confirmed) {
       this.http
-        .post<any>(`${environment.apiUrl}/payments/refund/${order.id}`, { reason })
+        .post<any>(`${environment.apiUrl}/payments/refund/${order.id}`, {
+          reason: 'Cancelación solicitada por el cliente',
+        })
         .subscribe({
           next: (res) => {
-            alert(`✅ Reembolso procesado con éxito en Culqi.\nID de Reembolso: ${res.refund?.refundId || 'N/A'}`);
+            this.toast.success(`Reembolso procesado con éxito en la pasarela.\nID de Reembolso: ${res.refund?.refundId || 'N/A'}`);
             this.loadOrders();
           },
           error: (err) => {
-            alert(err.error?.message || 'Error al procesar reembolso en Culqi.');
+            this.toast.error(err.error?.message || 'Error al procesar reembolso en la pasarela.');
           },
         });
     }

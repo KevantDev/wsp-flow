@@ -12,6 +12,10 @@ export class UpdateCompanyConfigDto {
 
   @IsString()
   @IsOptional()
+  tenantId?: string;
+
+  @IsString()
+  @IsOptional()
   companyName?: string;
 
   @IsString()
@@ -65,4 +69,41 @@ export class UpdateCompanyConfigDto {
   @Min(5)
   @Max(50)
   historyMessageLimit?: number;
+
+  @IsString()
+  @IsOptional()
+  pickupStoreAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  pickupStoreHours?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  deliveryZone1Price?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  deliveryZone2Price?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  deliveryZone3Price?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  deliveryProvincePrice?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  freeShippingThreshold?: number;
+
+  @IsString()
+  @IsOptional()
+  storeTheme?: string;
 }

@@ -1,13 +1,15 @@
-import { PrismaClient, Role, OrderStatus, OrderSource } from '@prisma/client';
+import { PrismaClient, Role, OrderStatus, OrderSource, PaymentMethod, PaymentStatus, TenantPlan, TenantStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Iniciando carga de datos semilla (Seed)...');
+  console.log('🌱 Iniciando carga de datos semilla Multi-Tenant SaaS...');
 
-  // Limpieza inicial opcional
+  // Limpieza inicial
   await prisma.auditLog.deleteMany();
+  await prisma.broadcastRecipient.deleteMany();
+  await prisma.broadcastCampaign.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.chatMessage.deleteMany();
@@ -15,43 +17,257 @@ async function main() {
   await prisma.productImage.deleteMany();
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();
-  await prisma.user.deleteMany();
   await prisma.whatsAppSession.deleteMany();
+  await prisma.companyConfig.deleteMany();
   await prisma.botKeyword.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.tenant.deleteMany();
+  await prisma.plan.deleteMany();
 
-  // 1. Crear Usuarios
-  const adminPasswordHash = await bcrypt.hash('Admin123456!', 10);
-  const subadminPasswordHash = await bcrypt.hash('Subadmin123456!', 10);
+  // 0. Crear Planes de Suscripción SaaS
+  await prisma.plan.createMany({
+    data: [
+      {
+        code: TenantPlan.FREE_TRIAL,
+        name: 'Free Trial',
+        description: 'Para emprendimientos que están iniciando y quieren probar el bot de WhatsApp.',
+        price: 0,
+        currency: 'PEN',
+        billingPeriod: 'MONTHLY',
+        maxProducts: 20,
+        maxBroadcasts: 50,
+        maxUsers: 1,
+        hasMercadoPago: false,
+        hasAiBot: true,
+        hasCustomThemes: false,
+        hasPdfCatalog: false,
+        features: [
+          'Bot IA Luna (Consultas básicas)',
+          'WhatsApp conectado 24/7',
+          'Hasta 20 productos',
+          '50 difusiones / mes',
+          '1 usuario administrador',
+        ],
+        badgeColor: 'zinc',
+        isPopular: false,
+        isActive: true,
+      },
+      {
+        code: TenantPlan.BASIC,
+        name: 'Basic',
+        description: 'Para negocios en crecimiento que necesitan catálogo web y pasarela de cobros.',
+        price: 49,
+        currency: 'PEN',
+        billingPeriod: 'MONTHLY',
+        maxProducts: 100,
+        maxBroadcasts: 500,
+        maxUsers: 2,
+        hasMercadoPago: true,
+        hasAiBot: true,
+        hasCustomThemes: false,
+        hasPdfCatalog: true,
+        features: [
+          'Bot IA Luna avanzado con catálogo',
+          'Pasarela Mercado Pago (Yape y tarjetas)',
+          'Hasta 100 productos',
+          '500 difusiones / mes',
+          'Catálogo PDF descargable',
+          '2 operadores / subadmins',
+        ],
+        badgeColor: 'blue',
+        isPopular: false,
+        isActive: true,
+      },
+      {
+        code: TenantPlan.PRO,
+        name: 'Pro',
+        description: 'Para marcas consolidadas que requieren personalización multitema y alto volumen.',
+        price: 99,
+        currency: 'PEN',
+        billingPeriod: 'MONTHLY',
+        maxProducts: 500,
+        maxBroadcasts: 2500,
+        maxUsers: 5,
+        hasMercadoPago: true,
+        hasAiBot: true,
+        hasCustomThemes: true,
+        hasPdfCatalog: true,
+        features: [
+          'Todo en Basic',
+          '3 temas de tienda (Cyber Tech, Minimal, Warm)',
+          'Hasta 500 productos',
+          '2,500 difusiones CRM / mes',
+          '5 operadores / subadmins',
+          'Reportes de ventas avanzados',
+        ],
+        badgeColor: 'indigo',
+        isPopular: true,
+        isActive: true,
+      },
+      {
+        code: TenantPlan.ENTERPRISE,
+        name: 'Enterprise',
+        description: 'Volumen corporativo con productos y difusiones ilimitadas, más soporte prioritario.',
+        price: 249,
+        currency: 'PEN',
+        billingPeriod: 'MONTHLY',
+        maxProducts: -1,
+        maxBroadcasts: -1,
+        maxUsers: -1,
+        hasMercadoPago: true,
+        hasAiBot: true,
+        hasCustomThemes: true,
+        hasPdfCatalog: true,
+        features: [
+          'Todo en Pro',
+          'Productos y difusiones ilimitadas',
+          'Operadores y subadmins ilimitados',
+          'Múltiples números de WhatsApp',
+          'Soporte 24/7 y SLA dedicado',
+        ],
+        badgeColor: 'amber',
+        isPopular: false,
+        isActive: true,
+      },
+    ],
+  });
 
-  const admin = await prisma.user.create({
+  console.log('✅ Planes de suscripción SaaS creados (Free Trial, Basic, Pro, Enterprise)');
+
+  // 1. Crear Tenants (Emprendimientos / Tiendas)
+  const tenantTech = await prisma.tenant.create({
     data: {
+      name: 'WSP Tech & Gaming',
+      slug: 'wsp-tech',
+      status: TenantStatus.ACTIVE,
+      plan: TenantPlan.ENTERPRISE,
+      logoUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=200&auto=format&fit=crop&q=80',
+      maxProducts: 200,
+      maxBroadcasts: 5000,
+    },
+  });
+
+  const tenantFashion = await prisma.tenant.create({
+    data: {
+      name: 'Moda Urbana & Sneakers',
+      slug: 'moda-urbana',
+      status: TenantStatus.ACTIVE,
+      plan: TenantPlan.PRO,
+      logoUrl: 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=200&auto=format&fit=crop&q=80',
+      maxProducts: 100,
+      maxBroadcasts: 1500,
+    },
+  });
+
+  console.log(`✅ Tenants creados: "${tenantTech.name}" (${tenantTech.id}) y "${tenantFashion.name}" (${tenantFashion.id})`);
+
+  // 2. Crear Usuarios
+  const passwordHash = await bcrypt.hash('Admin123456!', 10);
+
+  // Super Admin del SaaS (Plataforma Global)
+  await prisma.user.create({
+    data: {
+      email: 'superadmin@wspflow.com',
+      passwordHash,
+      fullName: 'Super Administrador SaaS',
+      phoneNumber: '+51999999999',
+      role: Role.SUPER_ADMIN,
+      isActive: true,
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    },
+  });
+
+  // Admin de Tienda Tech
+  await prisma.user.create({
+    data: {
+      tenantId: tenantTech.id,
       email: 'admin@wspflow.com',
-      passwordHash: adminPasswordHash,
-      fullName: 'Administrador Principal',
-      phoneNumber: '+5491123456789',
+      passwordHash,
+      fullName: 'Admin WSP Tech',
+      phoneNumber: '+51987654321',
+      role: Role.ADMIN,
+      isActive: true,
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    },
+  });
+
+  // Operador de Ventas Tech
+  await prisma.user.create({
+    data: {
+      tenantId: tenantTech.id,
+      email: 'subadmin@wspflow.com',
+      passwordHash,
+      fullName: 'Asesor de Ventas Tech',
+      phoneNumber: '+51987654320',
+      role: Role.SUBADMIN,
+      isActive: true,
+      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+    },
+  });
+
+  // Admin de Tienda Moda
+  await prisma.user.create({
+    data: {
+      tenantId: tenantFashion.id,
+      email: 'admin@modaurbana.com',
+      passwordHash,
+      fullName: 'Admin Moda Urbana',
+      phoneNumber: '+51912345678',
       role: Role.ADMIN,
       isActive: true,
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     },
   });
 
-  const subadmin = await prisma.user.create({
+  console.log('✅ Usuarios creados: SuperAdmin, Admin Tech, Subadmin Tech, Admin Fashion');
+
+  // 3. Crear Configuraciones de Empresa (CompanyConfig)
+  await prisma.companyConfig.create({
     data: {
-      email: 'subadmin@wspflow.com',
-      passwordHash: subadminPasswordHash,
-      fullName: 'Operador de Ventas',
-      phoneNumber: '+5491198765432',
-      role: Role.SUBADMIN,
-      isActive: true,
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      tenantId: tenantTech.id,
+      companyName: 'WSP Tech & Gaming',
+      businessDescription: 'Tienda de tecnología de punta, audio Hi-Res y accesorios gaming.',
+      address: 'Av. José Larco 743, Miraflores, Lima',
+      pickupStoreAddress: 'Av. José Larco 743, Miraflores, Lima (Gratis)',
+      aiModel: 'gpt-4o-mini',
+      aiTemperature: 0.7,
+      historyMessageLimit: 15,
+      systemPrompt: 'Eres Luna, la asesora virtual experta en tecnología de WSP Tech. Responde con calidez peruana y recomienda productos con entusiasmo.',
+      antiBanDelayMinMs: 1500,
+      antiBanDelayMaxMs: 3500,
+      deliveryZone1Price: 10,
+      deliveryZone2Price: 12,
+      deliveryZone3Price: 15,
+      deliveryProvincePrice: 15,
     },
   });
 
-  console.log('✅ Usuarios creados: Admin y Subadmin');
+  await prisma.companyConfig.create({
+    data: {
+      tenantId: tenantFashion.id,
+      companyName: 'Moda Urbana & Sneakers',
+      businessDescription: 'Boutique de moda urbana, hoodies oversized y zapatillas exclusivas.',
+      address: 'Calle Las Begonias 441, San Isidro, Lima',
+      pickupStoreAddress: 'Calle Las Begonias 441, San Isidro, Lima (Gratis)',
+      aiModel: 'gpt-4o-mini',
+      aiTemperature: 0.7,
+      historyMessageLimit: 15,
+      systemPrompt: 'Eres Mia, la asesora de estilo de Moda Urbana. Ayuda a los clientes a elegir su talla ideal y coordinar envíos rápidos.',
+      antiBanDelayMinMs: 1500,
+      antiBanDelayMaxMs: 3500,
+      deliveryZone1Price: 10,
+      deliveryZone2Price: 12,
+      deliveryZone3Price: 15,
+      deliveryProvincePrice: 15,
+    },
+  });
 
-  // 2. Crear Categorías
+  console.log('✅ Configuraciones de empresa creadas para ambos tenants');
+
+  // 4. Crear Categorías para Tenant Tech
   const catTech = await prisma.category.create({
     data: {
+      tenantId: tenantTech.id,
       name: 'Tecnología & Gadgets',
       slug: 'tecnologia-gadgets',
       description: 'Smartphones, smartwatches y dispositivos inteligentes',
@@ -62,6 +278,7 @@ async function main() {
 
   const catAudio = await prisma.category.create({
     data: {
+      tenantId: tenantTech.id,
       name: 'Audio & Sonido',
       slug: 'audio-sonido',
       description: 'Auriculares inalámbricos, parlantes Bluetooth y micrófonos',
@@ -72,6 +289,7 @@ async function main() {
 
   const catGaming = await prisma.category.create({
     data: {
+      tenantId: tenantTech.id,
       name: 'Accesorios & Gaming',
       slug: 'accesorios-gaming',
       description: 'Teclados mecánicos, mouses ópticos y periféricos',
@@ -80,11 +298,35 @@ async function main() {
     },
   });
 
-  console.log('✅ Categorías creadas');
+  // Categorías para Tenant Fashion
+  const catSneakers = await prisma.category.create({
+    data: {
+      tenantId: tenantFashion.id,
+      name: 'Sneakers & Zapatillas',
+      slug: 'sneakers-zapatillas',
+      description: 'Zapatillas urbanas de edición limitada y streetwear',
+      imageUrl: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?w=400&auto=format&fit=crop&q=80',
+      orderIndex: 1,
+    },
+  });
 
-  // 3. Crear Productos en Soles (PEN - S/.) (12 en total)
+  const catHoodies = await prisma.category.create({
+    data: {
+      tenantId: tenantFashion.id,
+      name: 'Hoodies & Poleras',
+      slug: 'hoodies-poleras',
+      description: 'Poleras oversized de algodón orgánico',
+      imageUrl: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=400&auto=format&fit=crop&q=80',
+      orderIndex: 2,
+    },
+  });
+
+  console.log('✅ Categorías creadas para ambos tenants');
+
+  // 5. Crear Productos para Tenant Tech
   const p1 = await prisma.product.create({
     data: {
+      tenantId: tenantTech.id,
       name: 'Auriculares Noise Cancelling Pro',
       slug: 'auriculares-noise-cancelling-pro',
       sku: 'AUD-NC-001',
@@ -97,11 +339,8 @@ async function main() {
       categoryId: catAudio.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&auto=format&fit=crop&q=80', isPrimary: true },
+          { imageUrl: 'https://images.unsplash.com/photo-1484704849700-f032a568e944?w=600&auto=format&fit=crop&q=80', isPrimary: false },
         ],
       },
     },
@@ -109,23 +348,20 @@ async function main() {
 
   const p2 = await prisma.product.create({
     data: {
+      tenantId: tenantTech.id,
       name: 'Smartwatch Ultra AMOLED Titanium',
       slug: 'smartwatch-ultra-amoled-titanium',
-      sku: 'WAT-ULT-002',
-      description: 'Pantalla AMOLED 1.96", GPS dual, sensor de ritmo cardíaco SpO2, resistencia 5ATM y caja de titanio.',
-      price: 289.00,
-      costPrice: 140.0,
-      stock: 14,
+      sku: 'WCH-ULT-002',
+      description: 'Pantalla AMOLED 1.43", caja de titanio resistente al agua IP68, sensor SpO2, GPS integrado y batería de 14 días.',
+      price: 249.90,
+      costPrice: 130.0,
+      stock: 18,
       minStockAlert: 4,
       isAvailable: true,
       categoryId: catTech.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -133,23 +369,20 @@ async function main() {
 
   const p3 = await prisma.product.create({
     data: {
+      tenantId: tenantTech.id,
       name: 'Teclado Mecánico RGB Hot-Swap 75%',
-      slug: 'teclado-mecanico-rgb-75',
+      slug: 'teclado-mecanico-rgb-hot-swap-75',
       sku: 'KEY-RGB-003',
-      description: 'Switches Gateron Pro Yellow, estructura gasket mount, teclas PBT de doble inyección y perilla multimedia.',
-      price: 149.00,
-      costPrice: 70.0,
-      stock: 3, // Stock bajo para probar alertas en Bento Grid
-      minStockAlert: 5,
+      description: 'Switches Gateron Yellow pre-lubricados, estructura gasket mount, teclas PBT de doble inyección y perilla de volumen.',
+      price: 199.00,
+      costPrice: 99.0,
+      stock: 12,
+      minStockAlert: 3,
       isAvailable: true,
       categoryId: catGaming.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -157,23 +390,20 @@ async function main() {
 
   const p4 = await prisma.product.create({
     data: {
-      name: 'Parlante Bluetooth Waterproof 360',
-      slug: 'parlante-bluetooth-waterproof-360',
-      sku: 'SPK-360-004',
-      description: 'Sonido envolvente 360 grados, protección IPX7 contra agua, 24 horas de reproducción continua y luces RGB dinámicas.',
-      price: 89.90,
-      costPrice: 45.0,
-      stock: 30,
-      minStockAlert: 6,
+      tenantId: tenantTech.id,
+      name: 'Mouse Gamer Wireless Ultralight 49g',
+      slug: 'mouse-gamer-wireless-ultralight-49g',
+      sku: 'MOU-WL-004',
+      description: 'Sensor óptico PixArt 3395 (26000 DPI), polling rate 4000Hz, switches ópticos Kailh y peso ultra ligero de 49 gramos.',
+      price: 129.90,
+      costPrice: 60.0,
+      stock: 3,
+      minStockAlert: 5,
       isAvailable: true,
-      categoryId: catAudio.id,
+      categoryId: catGaming.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -181,23 +411,20 @@ async function main() {
 
   const p5 = await prisma.product.create({
     data: {
-      name: 'Mouse Ergonómico Inalámbrico Dual Pro',
-      slug: 'mouse-ergonomico-inalambrico-dual-pro',
-      sku: 'MOU-ERG-005',
-      description: 'Sensor óptico de alta precisión 16,000 DPI, conectividad 2.4GHz + Bluetooth, batería recargable de 70 días y clics silenciosos.',
-      price: 79.90,
-      costPrice: 38.0,
-      stock: 40,
-      minStockAlert: 8,
+      tenantId: tenantTech.id,
+      name: 'Soporte de Carga Inalámbrica 3 en 1 MagSafe',
+      slug: 'soporte-carga-inalambrica-3-en-1-magsafe',
+      sku: 'CHG-MAG-005',
+      description: 'Estación de carga rápida magnética de 15W para iPhone, Apple Watch y AirPods. Acabado en aluminio espacial con diseño plegable para viajes y protección térmica inteligente.',
+      price: 149.90,
+      costPrice: 70.0,
+      stock: 20,
+      minStockAlert: 5,
       isAvailable: true,
-      categoryId: catGaming.id,
+      categoryId: catTech.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1622445262464-84b1456045b6?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -205,23 +432,20 @@ async function main() {
 
   const p6 = await prisma.product.create({
     data: {
-      name: 'Cámara Web 4K Pro Streaming AI',
-      slug: 'camara-web-4k-pro-streaming-ai',
-      sku: 'CAM-4K-006',
-      description: 'Resolución Ultra HD 4K a 60fps, encuadre automático por IA con sensor Sony STARVIS y micrófonos duales con cancelación de eco.',
-      price: 199.00,
-      costPrice: 105.0,
-      stock: 18,
+      tenantId: tenantTech.id,
+      name: 'Parlante Portátil Bluetooth Impermeable IPX7 BassBoost',
+      slug: 'parlante-portatil-bluetooth-ipx7-bassboost',
+      sku: 'SPK-BT-006',
+      description: 'Potencia de 30W con radiadores pasivos duales para graves profundos. Batería de 24 horas continuas, resistencia al agua IPX7 y sincronización estéreo TWS para emparejar 2 parlantes.',
+      price: 169.00,
+      costPrice: 85.0,
+      stock: 15,
       minStockAlert: 4,
       isAvailable: true,
-      categoryId: catTech.id,
+      categoryId: catAudio.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -229,23 +453,20 @@ async function main() {
 
   const p7 = await prisma.product.create({
     data: {
-      name: 'Monitor Curvo Gaming 27" QHD 180Hz',
-      slug: 'monitor-curvo-gaming-27-qhd-180hz',
-      sku: 'MON-CURV-007',
-      description: 'Panel Fast-VA curvatura 1500R, resolución 2560x1440 QHD, 1ms de respuesta, soporte HDR400 y FreeSync Premium.',
-      price: 699.00,
-      costPrice: 450.0,
-      stock: 12,
+      tenantId: tenantTech.id,
+      name: 'Cámara Web 4K Ultra HD con Anillo de Luz LED y Micrófono Dual',
+      slug: 'camara-web-4k-ultra-hd-anillo-luz',
+      sku: 'CAM-4K-007',
+      description: 'Sensor Sony Starvis 4K a 60fps con enfoque automático ultra rápido, obturador de privacidad magnético, anillo de luz táctil con 3 tonos y micrófonos con cancelación de eco.',
+      price: 219.00,
+      costPrice: 110.0,
+      stock: 14,
       minStockAlert: 3,
       isAvailable: true,
       categoryId: catGaming.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -253,23 +474,20 @@ async function main() {
 
   const p8 = await prisma.product.create({
     data: {
-      name: 'Micrófono Condensador USB Podcast Studio',
-      slug: 'microfono-condensador-usb-podcast-studio',
-      sku: 'MIC-POD-008',
-      description: 'Cápsula de condensador cardioide 24-bit / 192 kHz, botón mute táctil capacitivo, salida de monitoreo directa y brazo metálico incluido.',
-      price: 129.90,
-      costPrice: 65.0,
+      tenantId: tenantTech.id,
+      name: 'Hub USB-C 8 en 1 Multipuerto Aluminio 4K HDMI 100W PD',
+      slug: 'hub-usb-c-8-en-1-aluminio-4k-100w',
+      sku: 'HUB-USBC-008',
+      description: 'Adaptador multipuerto USB-C con salida HDMI 4K a 60Hz, puerto de carga Power Delivery 100W, Gigabit Ethernet RJ45, 3 puertos USB 3.0 (5Gbps) y lectores de tarjetas SD/microSD.',
+      price: 119.90,
+      costPrice: 55.0,
       stock: 22,
       minStockAlert: 5,
       isAvailable: true,
-      categoryId: catAudio.id,
+      categoryId: catTech.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
@@ -277,151 +495,119 @@ async function main() {
 
   const p9 = await prisma.product.create({
     data: {
-      name: 'Hub USB-C 10 en 1 Aluminio Aeroespacial',
-      slug: 'hub-usbc-10-en-1-aluminio-aeroespacial',
-      sku: 'HUB-10N1-009',
-      description: 'Salida HDMI 4K@60Hz, Gigabit Ethernet RJ45, lector de tarjetas SD/TF, carga rápida Power Delivery 100W y 3 puertos USB 3.2 Gen 2.',
-      price: 69.90,
-      costPrice: 32.0,
-      stock: 35,
-      minStockAlert: 7,
-      isAvailable: true,
-      categoryId: catTech.id,
-      images: {
-        create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1625842268584-8f3296236761?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
-        ],
-      },
-    },
-  });
-
-  const p10 = await prisma.product.create({
-    data: {
-      name: 'Barra de Luz LED RGB para Monitor con Dial 2.4G',
-      slug: 'barra-luz-led-rgb-monitor-dial-24g',
-      sku: 'LGT-RGB-010',
-      description: 'Iluminación asimétrica antifatiga visual, backlight ambiental RGB reactivo y control remoto inalámbrico por dial táctil.',
-      price: 65.00,
-      costPrice: 30.0,
-      stock: 28,
+      tenantId: tenantTech.id,
+      name: 'Mousepad Gamer XL RGB Speed Control Impermeable 900x400mm',
+      slug: 'mousepad-gamer-xl-rgb-900x400',
+      sku: 'PAD-RGB-009',
+      description: 'Superficie de microfibra de baja fricción optimizada para sensores ópticos y láser. Iluminación RGB perimetral con 14 modos cromáticos, base de goma antideslizante y recubrimiento hidrofóbico.',
+      price: 79.90,
+      costPrice: 35.0,
+      stock: 30,
       minStockAlert: 6,
       isAvailable: true,
       categoryId: catGaming.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1616440347437-b1c73416efc2?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
   });
 
-  const p11 = await prisma.product.create({
+  // Productos para Tenant Fashion
+  await prisma.product.create({
     data: {
-      name: 'Cargador Rápido GaN 65W Triple Puerto',
-      slug: 'cargador-rapido-gan-65w-triple-puerto',
-      sku: 'CHG-GAN-011',
-      description: 'Tecnología GaN III ultracompacta con 2 salidas USB-C PD 3.0 + 1 USB-A QC 4.0 para cargar laptops, tablets y móviles simultáneamente.',
-      price: 55.00,
-      costPrice: 25.0,
-      stock: 50,
-      minStockAlert: 10,
+      tenantId: tenantFashion.id,
+      name: 'Sneakers Retro Streetwear 90s',
+      slug: 'sneakers-retro-streetwear-90s',
+      sku: 'SNK-RET-001',
+      description: 'Zapatillas urbanas de cuero gamuzado con suela vulcanizada de alta tracción y amortiguación CloudWalk.',
+      price: 289.00,
+      costPrice: 140.0,
+      stock: 15,
+      minStockAlert: 3,
       isAvailable: true,
-      categoryId: catTech.id,
+      categoryId: catSneakers.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
   });
 
-  const p12 = await prisma.product.create({
+  await prisma.product.create({
     data: {
-      name: 'Auriculares In-Ear True Wireless ANC con Estuche Táctil',
-      slug: 'auriculares-in-ear-true-wireless-anc-estuche-tactil',
-      sku: 'EAR-ANC-012',
-      description: 'Drivers de grafeno de 11mm, cancelación híbrida activa de 42dB, estuche inteligente con pantalla táctil LED y protección IPX5.',
-      price: 109.90,
-      costPrice: 50.0,
-      stock: 32,
-      minStockAlert: 6,
+      tenantId: tenantFashion.id,
+      name: 'Hoodie Oversized Heavy Cotton',
+      slug: 'hoodie-oversized-heavy-cotton',
+      sku: 'HOD-OVR-002',
+      description: 'Polera con capucha de 450 GSM, corte oversized unisex y felpa interna térmica de alta durabilidad.',
+      price: 159.00,
+      costPrice: 70.0,
+      stock: 20,
+      minStockAlert: 4,
       isAvailable: true,
-      categoryId: catAudio.id,
+      categoryId: catHoodies.id,
       images: {
         create: [
-          {
-            imageUrl: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=600&auto=format&fit=crop&q=80',
-            isPrimary: true,
-            orderIndex: 0,
-          },
+          { imageUrl: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=600&auto=format&fit=crop&q=80', isPrimary: true },
         ],
       },
     },
   });
 
-  console.log('✅ 12 Productos creados en Soles (S/.) con imágenes, stock y categorías');
+  console.log('✅ Productos creados para ambos tenants');
 
-  // 4. Crear Sesión de WhatsApp por Defecto
-  await prisma.whatsAppSession.create({
+  // 6. Crear Sesiones de Chat de demostración
+  const chat1 = await prisma.chatSession.create({
     data: {
-      sessionName: 'default',
-      status: 'DISCONNECTED',
-      isAutoReplyActive: true,
-      welcomeMessage: '¡Hola! 👋 Bienvenido a nuestra tienda oficial en Perú. Escribe *catalogo* para ver nuestros productos en Soles o *ayuda* para contactar con un asesor.',
-      outOfStockMessage: 'Lo sentimos, este producto se encuentra momentáneamente agotado. ¡Te avisaremos cuando tengamos reposición!',
+      tenantId: tenantTech.id,
+      customerPhone: '51987654321',
+      customerName: 'Carlos Mendoza',
+      isBotActive: true,
+      lastInteraction: new Date(),
     },
   });
 
-  // 5. Crear Palabras Clave del Bot
-  await prisma.botKeyword.createMany({
+  await prisma.chatMessage.createMany({
     data: [
       {
-        keyword: 'catalogo',
-        matchType: 'CONTAINS',
-        response: '📦 Aquí tienes nuestro catálogo oficial de productos en Soles (S/.):',
-        action: 'SHOW_CATALOG',
+        chatSessionId: chat1.id,
+        sender: 'CUSTOMER',
+        senderName: 'Carlos Mendoza',
+        content: '¡Hola! ¿Tienen stock de los Auriculares Noise Cancelling?',
+        createdAt: new Date(Date.now() - 3600000),
       },
       {
-        keyword: 'asesor',
-        matchType: 'CONTAINS',
-        response: '👨‍💼 Un asesor de nuestro equipo se pondrá en contacto contigo en breve.',
-        action: 'PAUSE_BOT',
-      },
-      {
-        keyword: 'horarios',
-        matchType: 'CONTAINS',
-        response: '🕒 Nuestro horario de atención y envíos en Lima y provincias es de Lunes a Sábados de 09:00 a 20:00 hs.',
-        action: 'INFO',
+        chatSessionId: chat1.id,
+        sender: 'BOT',
+        senderName: 'Luna Bot',
+        content: '¡Hola Carlos! 😊 Sí, tenemos 25 unidades disponibles en stock con entrega inmediata en Lima por S/ 189.90. ¿Te gustaría ordenar uno?',
+        createdAt: new Date(Date.now() - 3500000),
       },
     ],
   });
 
-  // 6. Crear Pedidos Demostrativos en Soles
-  const order1 = await prisma.order.create({
+  // 7. Crear Pedidos de demostración
+  await prisma.order.create({
     data: {
-      orderNumber: 'ORD-2026-0001',
-      customerName: 'Lucas Fernández',
-      customerPhone: '51911334455',
-      customerAddress: 'Av. Larco 743, Miraflores, Lima',
+      tenantId: tenantTech.id,
+      orderNumber: 'ORD-20260830-101',
+      customerName: 'Carlos Mendoza',
+      customerPhone: '51987654321',
+      customerAddress: 'Av. Javier Prado Este 2450, San Borja, Lima',
       status: OrderStatus.CONFIRMED,
       source: OrderSource.WHATSAPP_BOT,
       subtotal: 189.90,
       deliveryFee: 10.00,
       total: 199.90,
-      notes: 'Entregar en portería - Pago confirmado Culqi',
-      handledById: subadmin.id,
+      paymentMethod: PaymentMethod.CULQI_CARD,
+      paymentStatus: PaymentStatus.PAID,
+      culqiChargeId: 'chr_seed_card_101',
+      paidAt: new Date(),
+      chatSessionId: chat1.id,
+      notes: 'Pedido confirmado y pagado en línea con Tarjeta',
       items: {
         create: [
           {
@@ -436,19 +622,21 @@ async function main() {
     },
   });
 
-  const order2 = await prisma.order.create({
+  await prisma.order.create({
     data: {
-      orderNumber: 'ORD-2026-0002',
-      customerName: 'Mariana Gómez',
-      customerPhone: '51911556677',
-      customerAddress: 'Calle Las Camelias 450, San Isidro, Lima',
-      status: OrderStatus.PENDING,
-      source: OrderSource.MANUAL_DASHBOARD,
-      subtotal: 289.00,
-      deliveryFee: 12.00,
-      total: 301.00,
-      notes: 'Llamar antes de entregar (Horario tarde)',
-      handledById: admin.id,
+      tenantId: tenantTech.id,
+      orderNumber: 'ORD-20260830-102',
+      customerName: 'Lucía Fernández',
+      customerPhone: '51998877665',
+      customerAddress: 'Av. Benavides 1530, Miraflores, Lima',
+      status: OrderStatus.DELIVERED,
+      source: OrderSource.WHATSAPP_BOT,
+      subtotal: 249.90,
+      deliveryFee: 0.00,
+      total: 249.90,
+      paymentMethod: PaymentMethod.CASH_ON_DELIVERY,
+      paymentStatus: PaymentStatus.AWAITING_CASH,
+      notes: 'Entrega contra entrega realizada. Pendiente de recaudo por supervisor.',
       items: {
         create: [
           {
@@ -456,100 +644,19 @@ async function main() {
             productName: p2.name,
             unitPrice: p2.price,
             quantity: 1,
-            subtotal: 289.00,
+            subtotal: 249.90,
           },
         ],
       },
     },
   });
 
-  console.log('✅ Pedidos demostrativos creados en Soles:', order1.orderNumber, order2.orderNumber);
-
-  // 7. Crear Sesiones de Chat y Mensajes Iniciales para el Live Chat
-  await prisma.chatSession.create({
-    data: {
-      customerPhone: '51911334455',
-      customerName: 'Lucas Fernández',
-      isBotActive: false,
-      lastInteraction: new Date(),
-      unreadCount: 0,
-      messages: {
-        create: [
-          {
-            sender: 'CUSTOMER',
-            senderName: 'Lucas Fernández',
-            content: '¡Hola! Quería consultar sobre el estado de mi pedido de Auriculares Noise Cancelling (S/ 189.90).',
-            isRead: true,
-            createdAt: new Date(Date.now() - 3600000 * 2),
-          },
-          {
-            sender: 'BOT',
-            senderName: 'Bot WSP',
-            content: '¡Hola Lucas! 👋 Tu pedido ORD-2026-0001 se encuentra confirmado y pagado por S/ 199.90 (incluye delivery a Miraflores).',
-            isRead: true,
-            createdAt: new Date(Date.now() - 3600000 * 2 + 10000),
-          },
-          {
-            sender: 'AGENT',
-            senderName: 'Administrador Principal',
-            content: 'Hola Lucas, tu pedido ya está siendo empaquetado para despacho hoy mismo con motorizado.',
-            isRead: true,
-            createdAt: new Date(Date.now() - 3600000 * 1),
-          },
-          {
-            sender: 'CUSTOMER',
-            senderName: 'Lucas Fernández',
-            content: '¡Excelente, muchas gracias por la atención rápida!',
-            isRead: true,
-            createdAt: new Date(Date.now() - 1800000),
-          },
-        ],
-      },
-    },
-  });
-
-  await prisma.chatSession.create({
-    data: {
-      customerPhone: '51911556677',
-      customerName: 'Mariana Gómez',
-      isBotActive: true,
-      lastInteraction: new Date(),
-      unreadCount: 1,
-      messages: {
-        create: [
-          {
-            sender: 'CUSTOMER',
-            senderName: 'Mariana Gómez',
-            content: 'Hola, ¿tienen stock del Smartwatch Ultra AMOLED Titanium a S/ 289?',
-            isRead: true,
-            createdAt: new Date(Date.now() - 900000),
-          },
-          {
-            sender: 'BOT',
-            senderName: 'Bot WSP',
-            content: '¡Hola Mariana! Sí, contamos con 14 unidades disponibles en stock para envío hoy mismo a San Isidro o cualquier distrito de Lima. El delivery es S/ 12.00.',
-            isRead: true,
-            createdAt: new Date(Date.now() - 880000),
-          },
-          {
-            sender: 'CUSTOMER',
-            senderName: 'Mariana Gómez',
-            content: '¿Aceptan Yape o pago con tarjeta vía link?',
-            isRead: false,
-            createdAt: new Date(Date.now() - 300000),
-          },
-        ],
-      },
-    },
-  });
-
-  console.log('✅ Sesiones de Chat iniciales creadas con historial');
-  console.log('🎉 Seed completado exitosamente.');
+  console.log('🌱 ¡Seed Multi-Tenant completado con éxito!');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Error en seed:', e);
+    console.error('❌ Error ejecutando seed:', e);
     process.exit(1);
   })
   .finally(async () => {

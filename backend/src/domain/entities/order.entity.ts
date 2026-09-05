@@ -12,6 +12,24 @@ export enum OrderSource {
   MANUAL_DASHBOARD = 'MANUAL_DASHBOARD',
 }
 
+export enum PaymentMethod {
+  CULQI_CARD = 'CULQI_CARD',
+  CULQI_YAPE = 'CULQI_YAPE',
+  MERCADOPAGO = 'MERCADOPAGO',
+  CASH_ON_DELIVERY = 'CASH_ON_DELIVERY',
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  CULQI_PENDING = 'CULQI_PENDING',
+  PENDING = 'PENDING',
+}
+
+export enum PaymentStatus {
+  PENDING = 'PENDING',
+  AWAITING_CASH = 'AWAITING_CASH',
+  PAID = 'PAID',
+  REFUNDED = 'REFUNDED',
+  FAILED = 'FAILED',
+}
+
 export class OrderItemEntity {
   id: string;
   orderId: string;
@@ -24,6 +42,7 @@ export class OrderItemEntity {
 
 export class OrderEntity {
   id: string;
+  tenantId: string;
   orderNumber: string;
   chatSessionId?: string;
   customerName: string;
@@ -34,11 +53,16 @@ export class OrderEntity {
   subtotal: number;
   deliveryFee: number;
   total: number;
-  paymentMethod?: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
   culqiChargeId?: string;
   culqiRefundId?: string;
+  mercadoPagoPaymentId?: string;
+  mercadoPagoPreferenceId?: string;
   paidAt?: Date;
   refundedAt?: Date;
+  cashCollectedById?: string;
+  cashCollectedByName?: string;
   notes?: string;
   handledById?: string;
   handledByName?: string;

@@ -14,24 +14,25 @@ export class CategoriesService {
       .replace(/\s+/g, '-');
   }
 
-  async getAll(onlyActive = false) {
-    return this.categoryRepo.findAll(onlyActive);
+  async getAll(tenantId?: string, onlyActive = false) {
+    return this.categoryRepo.findAll(tenantId, onlyActive);
   }
 
-  async getById(id: string) {
-    const cat = await this.categoryRepo.findById(id);
+  async getById(id: string, tenantId?: string) {
+    const cat = await this.categoryRepo.findById(id, tenantId);
     if (!cat) throw new NotFoundException('Categoría no encontrada');
     return cat;
   }
 
-  async create(dto: CreateCategoryDto) {
+  async create(dto: CreateCategoryDto, tenantId: string) {
     const slug = this.generateSlug(dto.name);
-    const existing = await this.categoryRepo.findBySlug(slug);
+    const existing = await this.categoryRepo.findBySlug(slug, tenantId);
     if (existing) {
       throw new ConflictException('Ya existe una categoría con este nombre');
     }
 
     return this.categoryRepo.create({
+      tenantId,
       name: dto.name,
       slug,
       description: dto.description,
@@ -41,8 +42,8 @@ export class CategoriesService {
     });
   }
 
-  async update(id: string, dto: UpdateCategoryDto) {
-    await this.getById(id);
+  async update(id: string, dto: UpdateCategoryDto, tenantId?: string) {
+    await this.getById(id, tenantId);
     const slug = dto.name ? this.generateSlug(dto.name) : undefined;
     return this.categoryRepo.update(id, {
       name: dto.name,
@@ -54,8 +55,8 @@ export class CategoriesService {
     });
   }
 
-  async delete(id: string) {
-    await this.getById(id);
+  async delete(id: string, tenantId?: string) {
+    await this.getById(id, tenantId);
     return this.categoryRepo.delete(id);
   }
 }

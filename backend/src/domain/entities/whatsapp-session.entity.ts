@@ -7,6 +7,7 @@ export enum SessionStatus {
 
 export class WhatsAppSessionEntity {
   id: string;
+  tenantId: string;
   sessionName: string;
   phoneNumber?: string;
   status: SessionStatus;

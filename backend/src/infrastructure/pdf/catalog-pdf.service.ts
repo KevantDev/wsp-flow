@@ -21,22 +21,25 @@ export class CatalogPdfService {
     }
   }
 
-  getPdfPath(): string {
-    return this.pdfPath;
+  getPdfPath(tenantId = 'default'): string {
+    return path.join(this.catalogDir, `catalogo_${tenantId}.pdf`);
   }
 
-  hasGeneratedPdf(): boolean {
-    return fs.existsSync(this.pdfPath);
+  hasGeneratedPdf(tenantId = 'default'): boolean {
+    return fs.existsSync(this.getPdfPath(tenantId));
   }
 
   /**
    * Genera o regenera el catálogo completo en PDF con diseño Bento
    */
-  async generateCatalogPdf(): Promise<{ buffer: Buffer; filePath: string }> {
-    this.logger.log('📄 Iniciando generación del Catálogo PDF...');
+  async generateCatalogPdf(tenantId?: string): Promise<{ buffer: Buffer; filePath: string }> {
+    this.logger.log(`📄 Iniciando generación del Catálogo PDF para tenant: ${tenantId || 'global'}...`);
+    const targetPath = this.getPdfPath(tenantId || 'default');
 
-    const products = await this.productRepo.findAll({ onlyAvailable: true });
-    const categories = await this.categoryRepo.findAll(true);
+    const [products, categories] = await Promise.all([
+      this.productRepo.findAll({ tenantId, onlyAvailable: true }),
+      this.categoryRepo.findAll(tenantId, true),
+    ]);
 
     return new Promise(async (resolve, reject) => {
       try {
@@ -54,9 +57,9 @@ export class CatalogPdfService {
         doc.on('data', (chunk) => buffers.push(chunk));
         doc.on('end', () => {
           const finalBuffer = Buffer.concat(buffers);
-          fs.writeFileSync(this.pdfPath, finalBuffer);
-          this.logger.log(`✅ Catálogo PDF guardado exitosamente en: ${this.pdfPath} (${(finalBuffer.length / 1024).toFixed(1)} KB)`);
-          resolve({ buffer: finalBuffer, filePath: this.pdfPath });
+          fs.writeFileSync(targetPath, finalBuffer);
+          this.logger.log(`✅ Catálogo PDF guardado exitosamente en: ${targetPath} (${(finalBuffer.length / 1024).toFixed(1)} KB)`);
+          resolve({ buffer: finalBuffer, filePath: targetPath });
         });
 
         const pageWidth = 595.28;

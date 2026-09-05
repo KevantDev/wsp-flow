@@ -10,12 +10,12 @@ export class ChatService {
     private readonly baileysService: BaileysService,
   ) {}
 
-  async getAllSessions() {
-    return this.chatRepo.findAllSessions();
+  async getAllSessions(tenantId?: string) {
+    return this.chatRepo.findAllSessions(tenantId);
   }
 
-  async createOrGetSession(dto: CreateChatSessionDto) {
-    return this.chatRepo.findOrCreateSession(dto.customerPhone, dto.customerName);
+  async createOrGetSession(dto: CreateChatSessionDto, tenantId: string) {
+    return this.chatRepo.findOrCreateSession(tenantId, dto.customerPhone, dto.customerName);
   }
 
   async getSessionMessages(chatSessionId: string, limit = 30, offset = 0) {
@@ -28,13 +28,13 @@ export class ChatService {
     return result;
   }
 
-  async toggleBot(dto: ToggleBotDto) {
-    const session = await this.chatRepo.toggleBot(dto.customerPhone, dto.isBotActive);
+  async toggleBot(dto: ToggleBotDto, tenantId: string) {
+    const session = await this.chatRepo.toggleBot(tenantId, dto.customerPhone, dto.isBotActive);
     if (!session) throw new NotFoundException('Conversación no encontrada');
     return session;
   }
 
-  async sendManualMessage(dto: SendManualMessageDto, senderName = 'Agente') {
-    return this.baileysService.sendManualMessage(dto.customerPhone, dto.content, senderName);
+  async sendManualMessage(dto: SendManualMessageDto, tenantId: string, senderName = 'Agente') {
+    return this.baileysService.sendManualMessage(tenantId, dto.customerPhone, dto.content, senderName);
   }
 }

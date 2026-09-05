@@ -4,12 +4,14 @@ import * as bcrypt from 'bcrypt';
 import { PrismaUserRepository } from '../../infrastructure/persistence/prisma/repositories/prisma-user.repository';
 import { LoginDto, RegisterSubadminDto } from '../dtos/auth.dto';
 import { Role } from '../../domain/entities/user.entity';
+import { PlansService } from './plans.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly userRepo: PrismaUserRepository,
     private readonly jwtService: JwtService,
+    private readonly plansService: PlansService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -32,6 +34,7 @@ export class AuthService {
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      tenantId: user.tenantId,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -40,6 +43,7 @@ export class AuthService {
       accessToken,
       user: {
         id: user.id,
+        tenantId: user.tenantId,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
@@ -49,7 +53,11 @@ export class AuthService {
     };
   }
 
-  async registerSubadmin(dto: RegisterSubadminDto) {
+  async registerSubadmin(dto: RegisterSubadminDto, tenantId?: string) {
+    if (tenantId) {
+      await this.plansService.checkTenantQuota(tenantId, 'USER');
+    }
+
     const existing = await this.userRepo.findByEmail(dto.email.toLowerCase().trim());
     if (existing) {
       throw new ConflictException('Ya existe un usuario con este correo electrónico');
@@ -57,6 +65,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const created = await this.userRepo.create({
+      tenantId,
       email: dto.email.toLowerCase().trim(),
       passwordHash,
       fullName: dto.fullName,
@@ -68,6 +77,7 @@ export class AuthService {
 
     return {
       id: created.id,
+      tenantId: created.tenantId,
       email: created.email,
       fullName: created.fullName,
       role: created.role,
@@ -80,6 +90,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Usuario no encontrado');
     return {
       id: user.id,
+      tenantId: user.tenantId,
       email: user.email,
       fullName: user.fullName,
       role: user.role,

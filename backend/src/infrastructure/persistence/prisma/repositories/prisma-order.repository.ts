@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { IOrderRepository } from '../../../../domain/repositories/order.repository.interface';
-import { OrderEntity, OrderStatus, OrderSource } from '../../../../domain/entities/order.entity';
+import {
+  OrderEntity,
+  OrderStatus,
+  OrderSource,
+  PaymentMethod,
+  PaymentStatus,
+} from '../../../../domain/entities/order.entity';
 
 @Injectable()
 export class PrismaOrderRepository implements IOrderRepository {
@@ -10,6 +16,7 @@ export class PrismaOrderRepository implements IOrderRepository {
   private mapToEntity(o: any): OrderEntity {
     return new OrderEntity({
       id: o.id,
+      tenantId: o.tenantId,
       orderNumber: o.orderNumber,
       chatSessionId: o.chatSessionId,
       customerName: o.customerName,
@@ -20,11 +27,16 @@ export class PrismaOrderRepository implements IOrderRepository {
       subtotal: o.subtotal,
       deliveryFee: o.deliveryFee,
       total: o.total,
-      paymentMethod: o.paymentMethod,
+      paymentMethod: (o.paymentMethod as PaymentMethod) || PaymentMethod.PENDING,
+      paymentStatus: (o.paymentStatus as PaymentStatus) || PaymentStatus.PENDING,
       culqiChargeId: o.culqiChargeId,
       culqiRefundId: o.culqiRefundId,
+      mercadoPagoPaymentId: o.mercadoPagoPaymentId,
+      mercadoPagoPreferenceId: o.mercadoPagoPreferenceId,
       paidAt: o.paidAt,
       refundedAt: o.refundedAt,
+      cashCollectedById: o.cashCollectedById,
+      cashCollectedByName: o.cashCollectedBy?.fullName,
       notes: o.notes,
       handledById: o.handledById,
       handledByName: o.handledBy?.fullName,
@@ -42,32 +54,76 @@ export class PrismaOrderRepository implements IOrderRepository {
     });
   }
 
-  async findById(id: string): Promise<OrderEntity | null> {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: { items: true, handledBy: true },
+  async findById(id: string, tenantId?: string): Promise<OrderEntity | null> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const order = await this.prisma.order.findFirst({
+      where,
+      include: { items: true, handledBy: true, cashCollectedBy: true },
     });
     if (!order) return null;
     return this.mapToEntity(order);
   }
 
-  async findByOrderNumber(orderNumber: string): Promise<OrderEntity | null> {
-    const order = await this.prisma.order.findUnique({
-      where: { orderNumber },
-      include: { items: true, handledBy: true },
+  async findByOrderNumber(orderNumber: string, tenantId?: string): Promise<OrderEntity | null> {
+    const where: any = { orderNumber };
+    if (tenantId) where.tenantId = tenantId;
+
+    const order = await this.prisma.order.findFirst({
+      where,
+      include: { items: true, handledBy: true, cashCollectedBy: true },
     });
     if (!order) return null;
     return this.mapToEntity(order);
   }
 
-  async findAll(filters?: { status?: OrderStatus; customerPhone?: string; limit?: number }): Promise<OrderEntity[]> {
+  async findAll(filters?: {
+    tenantId?: string;
+    status?: OrderStatus;
+    paymentMethod?: PaymentMethod;
+    paymentStatus?: PaymentStatus;
+    customerPhone?: string;
+    chatSessionId?: string;
+    limit?: number;
+  }): Promise<OrderEntity[]> {
     const where: any = {};
+    if (filters?.tenantId) where.tenantId = filters.tenantId;
     if (filters?.status) where.status = filters.status;
-    if (filters?.customerPhone) where.customerPhone = { contains: filters.customerPhone };
+    if (filters?.paymentMethod) where.paymentMethod = filters.paymentMethod;
+    if (filters?.paymentStatus) where.paymentStatus = filters.paymentStatus;
+
+    const orConditions: any[] = [];
+
+    if (filters?.chatSessionId) {
+      orConditions.push({ chatSessionId: filters.chatSessionId });
+    }
+
+    if (filters?.customerPhone) {
+      const raw = filters.customerPhone.trim();
+      const clean = raw.replace(/\D/g, '');
+
+      orConditions.push({ customerPhone: { contains: raw } });
+      if (clean && clean !== raw) {
+        orConditions.push({ customerPhone: { contains: clean } });
+      }
+      if (clean.length === 9 && clean.startsWith('9')) {
+        orConditions.push({ customerPhone: { contains: `51${clean}` } });
+      } else if (clean.length === 11 && clean.startsWith('519')) {
+        orConditions.push({ customerPhone: { contains: clean.substring(2) } });
+      }
+      if (clean.length > 9) {
+        orConditions.push({ customerPhone: { contains: clean.slice(-9) } });
+      }
+    }
+
+    if (orConditions.length > 0) {
+      where.OR = orConditions;
+    }
 
     const orders = await this.prisma.order.findMany({
       where,
-      include: { items: true, handledBy: true },
+      include: { items: true, handledBy: true, cashCollectedBy: true },
       orderBy: { createdAt: 'desc' },
       take: filters?.limit,
     });
@@ -78,11 +134,14 @@ export class PrismaOrderRepository implements IOrderRepository {
     order: Partial<OrderEntity>,
     items: { productId: string; productName: string; unitPrice: number; quantity: number; subtotal: number }[],
   ): Promise<OrderEntity> {
-    const count = await this.prisma.order.count();
-    const orderNumber = order.orderNumber || `ORD-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+    const tenantId = order.tenantId!;
+    const count = await this.prisma.order.count({ where: { tenantId } });
+    const orderNumber =
+      order.orderNumber || `ORD-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
 
     const created = await this.prisma.order.create({
       data: {
+        tenantId,
         orderNumber,
         chatSessionId: order.chatSessionId,
         customerName: order.customerName || 'Cliente WhatsApp',
@@ -93,7 +152,8 @@ export class PrismaOrderRepository implements IOrderRepository {
         subtotal: order.subtotal || 0,
         deliveryFee: order.deliveryFee || 0,
         total: order.total || 0,
-        paymentMethod: order.paymentMethod || 'CULQI_PENDING',
+        paymentMethod: (order.paymentMethod as any) || 'CULQI_PENDING',
+        paymentStatus: (order.paymentMethod as any) === 'CASH_ON_DELIVERY' ? 'AWAITING_CASH' : 'PENDING',
         culqiChargeId: order.culqiChargeId,
         culqiRefundId: order.culqiRefundId,
         paidAt: order.paidAt,
@@ -109,7 +169,7 @@ export class PrismaOrderRepository implements IOrderRepository {
           })),
         },
       },
-      include: { items: true, handledBy: true },
+      include: { items: true, handledBy: true, cashCollectedBy: true },
     });
     return this.mapToEntity(created);
   }
@@ -121,7 +181,20 @@ export class PrismaOrderRepository implements IOrderRepository {
         status: status as any,
         ...(handledById && { handledById }),
       },
-      include: { items: true, handledBy: true },
+      include: { items: true, handledBy: true, cashCollectedBy: true },
+    });
+    return this.mapToEntity(updated);
+  }
+
+  async markCashCollected(id: string, cashCollectedById: string): Promise<OrderEntity> {
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: {
+        paymentStatus: 'PAID' as any,
+        paidAt: new Date(),
+        cashCollectedById,
+      },
+      include: { items: true, handledBy: true, cashCollectedBy: true },
     });
     return this.mapToEntity(updated);
   }
@@ -132,7 +205,10 @@ export class PrismaOrderRepository implements IOrderRepository {
       paymentMethod?: string;
       culqiChargeId?: string;
       culqiRefundId?: string;
+      mercadoPagoPaymentId?: string;
+      mercadoPagoPreferenceId?: string;
       status?: OrderStatus;
+      paymentStatus?: string;
       paidAt?: Date;
       refundedAt?: Date;
       notes?: string;
@@ -141,15 +217,18 @@ export class PrismaOrderRepository implements IOrderRepository {
     const updated = await this.prisma.order.update({
       where: { id },
       data: {
-        ...(data.paymentMethod && { paymentMethod: data.paymentMethod }),
+        ...(data.paymentMethod && { paymentMethod: data.paymentMethod as any }),
         ...(data.culqiChargeId && { culqiChargeId: data.culqiChargeId }),
         ...(data.culqiRefundId && { culqiRefundId: data.culqiRefundId }),
+        ...(data.mercadoPagoPaymentId && { mercadoPagoPaymentId: data.mercadoPagoPaymentId }),
+        ...(data.mercadoPagoPreferenceId && { mercadoPagoPreferenceId: data.mercadoPagoPreferenceId }),
         ...(data.status && { status: data.status as any }),
+        ...(data.paymentStatus && { paymentStatus: data.paymentStatus as any }),
         ...(data.paidAt && { paidAt: data.paidAt }),
         ...(data.refundedAt && { refundedAt: data.refundedAt }),
         ...(data.notes && { notes: data.notes }),
       },
-      include: { items: true, handledBy: true },
+      include: { items: true, handledBy: true, cashCollectedBy: true },
     });
     return this.mapToEntity(updated);
   }
@@ -175,13 +254,16 @@ export class PrismaOrderRepository implements IOrderRepository {
         total: data.total,
         ...(data.notes && { notes: data.notes }),
       },
-      include: { items: true, handledBy: true },
+      include: { items: true, handledBy: true, cashCollectedBy: true },
     });
     return this.mapToEntity(updated);
   }
 
-  async getMetrics(): Promise<{ totalRevenue: number; totalOrders: number; pendingOrders: number; completedOrders: number }> {
-    const orders = await this.prisma.order.findMany();
+  async getMetrics(tenantId?: string): Promise<{ totalRevenue: number; totalOrders: number; pendingOrders: number; completedOrders: number }> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+
+    const orders = await this.prisma.order.findMany({ where });
     const totalRevenue = orders
       .filter((o) => o.status !== 'CANCELLED')
       .reduce((acc, curr) => acc + curr.total, 0);

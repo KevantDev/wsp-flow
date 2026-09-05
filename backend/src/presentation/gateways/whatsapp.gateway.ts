@@ -30,32 +30,75 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.logger.log(`🔌 Cliente WebSocket desconectado: ${client.id}`);
   }
 
-  // Emisores hacia el Frontend (Angular)
-  emitQrCode(qrDataUrl: string) {
-    this.server?.emit('whatsapp:qr', { qr: qrDataUrl, timestamp: new Date() });
+  // Emisores hacia el Frontend (Angular) con aislamiento Multi-Tenant (Rooms)
+  emitQrCode(qrDataUrl: string, tenantId?: string) {
+    const payload = { qr: qrDataUrl, tenantId, timestamp: new Date() };
+    if (tenantId) {
+      this.server?.to(`tenant:${tenantId}`).emit('whatsapp:qr', payload);
+    } else {
+      this.server?.emit('whatsapp:qr', payload);
+    }
   }
 
-  emitConnectionStatus(status: string, phoneNumber?: string | null) {
-    this.server?.emit('whatsapp:status', { status, phoneNumber, timestamp: new Date() });
+  emitConnectionStatus(status: string, phoneNumber?: string | null, tenantId?: string) {
+    const payload = { status, phoneNumber, tenantId, timestamp: new Date() };
+    if (tenantId) {
+      this.server?.to(`tenant:${tenantId}`).emit('whatsapp:status', payload);
+    } else {
+      this.server?.emit('whatsapp:status', payload);
+    }
   }
 
   emitNewChatMessage(message: any) {
-    this.server?.emit('chat:message', message);
+    const tenantId = message?.tenantId;
+    if (tenantId) {
+      this.server?.to(`tenant:${tenantId}`).emit('chat:message', message);
+    } else {
+      this.server?.emit('chat:message', message);
+    }
   }
 
   emitNewOrder(order: any) {
-    this.server?.emit('orders:new', order);
+    const tenantId = order?.tenantId;
+    if (tenantId) {
+      this.server?.to(`tenant:${tenantId}`).emit('orders:new', order);
+    } else {
+      this.server?.emit('orders:new', order);
+    }
   }
 
   emitOrderStatusUpdate(order: any) {
-    this.server?.emit('orders:updated', order);
+    const tenantId = order?.tenantId;
+    if (tenantId) {
+      this.server?.to(`tenant:${tenantId}`).emit('orders:updated', order);
+    } else {
+      this.server?.emit('orders:updated', order);
+    }
   }
 
   emitStockAlert(product: any) {
-    this.server?.emit('products:low_stock', product);
+    const tenantId = product?.tenantId;
+    if (tenantId) {
+      this.server?.to(`tenant:${tenantId}`).emit('products:low_stock', product);
+    } else {
+      this.server?.emit('products:low_stock', product);
+    }
   }
 
   // Mensajes recibidos desde el Frontend
+  @SubscribeMessage('join:tenant')
+  handleJoinTenant(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { tenantId?: string },
+  ) {
+    const tenantId = data?.tenantId;
+    if (tenantId) {
+      client.join(`tenant:${tenantId}`);
+      this.logger.log(`🏢 Cliente [${client.id}] se unió a la sala privada tenant:${tenantId}`);
+      client.emit('tenant:joined', { tenantId, success: true });
+    }
+  }
+
   @SubscribeMessage('ping')
   handlePing(@ConnectedSocket() client: Socket) {
     client.emit('pong', { message: 'Servidor WebSocket activo' });

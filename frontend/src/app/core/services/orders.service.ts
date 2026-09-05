@@ -27,8 +27,20 @@ export class OrdersService {
     return this.http.post<Order>(this.apiUrl, data);
   }
 
-  updateOrderStatus(id: string, status: OrderStatus): Observable<Order> {
-    return this.http.patch<Order>(`${this.apiUrl}/${id}/status`, { status });
+  createPublicCheckoutOrder(data: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/public-checkout`, data);
+  }
+
+  updateOrderStatus(id: string, status: OrderStatus, customMessage?: string): Observable<Order> {
+    return this.http.patch<Order>(`${this.apiUrl}/${id}/status`, { status, customMessage });
+  }
+
+  markCashCollected(id: string, notes?: string): Observable<Order> {
+    return this.http.patch<Order>(`${this.apiUrl}/${id}/collect-cash`, { notes });
+  }
+
+  getPendingCashOrders(): Observable<Order[]> {
+    return this.http.get<Order[]>(`${this.apiUrl}/pending-cash`);
   }
 
   getMetrics(): Observable<any> {

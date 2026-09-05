@@ -1,6 +1,6 @@
 import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { OrderStatus, OrderSource } from '../../domain/entities/order.entity';
+import { OrderStatus, OrderSource, PaymentMethod } from '../../domain/entities/order.entity';
 
 export class CreateOrderItemDto {
   @IsString()
@@ -33,6 +33,10 @@ export class CreateOrderDto {
   @IsOptional()
   deliveryFee?: number;
 
+  @IsEnum(PaymentMethod, { message: 'Método de pago inválido' })
+  @IsOptional()
+  paymentMethod?: PaymentMethod;
+
   @IsString()
   @IsOptional()
   notes?: string;
@@ -47,4 +51,14 @@ export class UpdateOrderStatusDto {
   @IsEnum(OrderStatus, { message: 'Estado de pedido inválido' })
   @IsNotEmpty()
   status: OrderStatus;
+
+  @IsString()
+  @IsOptional()
+  customMessage?: string;
+}
+
+export class MarkCashCollectedDto {
+  @IsString()
+  @IsOptional()
+  notes?: string;
 }

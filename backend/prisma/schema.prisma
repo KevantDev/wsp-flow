@@ -8,8 +8,22 @@ datasource db {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   SUBADMIN
+}
+
+enum TenantPlan {
+  FREE_TRIAL
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_PAYMENT
 }
 
 enum OrderStatus {
@@ -39,8 +53,95 @@ enum MessageSender {
   AGENT
 }
 
+enum PaymentMethod {
+  CULQI_CARD
+  CULQI_YAPE
+  MERCADOPAGO
+  CASH_ON_DELIVERY
+  BANK_TRANSFER
+  CULQI_PENDING
+  PENDING
+}
+
+enum PaymentStatus {
+  PENDING
+  AWAITING_CASH
+  PAID
+  REFUNDED
+  FAILED
+}
+
+enum BotKeywordMatchType {
+  EXACT
+  CONTAINS
+  REGEX
+}
+
+model Plan {
+  id              String      @id @default(uuid())
+  code            TenantPlan  @unique
+  name            String
+  description     String?
+  price           Float       @default(0)
+  currency        String      @default("PEN")
+  billingPeriod   String      @default("MONTHLY")
+  maxProducts     Int         @default(20)
+  maxBroadcasts   Int         @default(50)
+  maxUsers        Int         @default(1)
+  hasMercadoPago  Boolean     @default(false)
+  hasAiBot        Boolean     @default(true)
+  hasCustomThemes Boolean     @default(false)
+  hasPdfCatalog   Boolean     @default(true)
+  features        String[]    @default([])
+  badgeColor      String      @default("zinc")
+  isPopular       Boolean     @default(false)
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  tenants         Tenant[]
+
+  @@map("plans")
+}
+
+model Tenant {
+  id              String        @id @default(uuid())
+  name            String
+  slug            String        @unique
+  logoUrl         String?
+  plan            TenantPlan    @default(FREE_TRIAL)
+  planRef         Plan?         @relation(fields: [plan], references: [code])
+  status          TenantStatus  @default(ACTIVE)
+  maxProducts     Int           @default(50)
+  maxBroadcasts   Int           @default(500)
+  culqiPublicKey  String?
+  culqiPrivateKey String?
+  mpPublicKey     String?
+  mpAccessToken   String?
+  mpRefreshToken  String?
+  mpUserId        String?
+  mpConnectedAt   DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  users            User[]
+  categories       Category[]
+  products         Product[]
+  orders           Order[]
+  chatSessions     ChatSession[]
+  whatsappSessions WhatsAppSession[]
+  config           CompanyConfig?
+  botKeywords      BotKeyword[]
+  broadcasts       BroadcastCampaign[]
+  auditLogs        AuditLog[]
+
+  @@map("tenants")
+}
+
 model User {
   id            String      @id @default(uuid())
+  tenantId      String?
+  tenant        Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   email         String      @unique
   passwordHash  String
   fullName      String
@@ -51,17 +152,21 @@ model User {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  assignedChats ChatSession[]
-  ordersHandled Order[]
-  auditLogs     AuditLog[]
+  assignedChats       ChatSession[]
+  ordersHandled       Order[]       @relation("HandledBy")
+  cashCollectedOrders Order[]       @relation("CashCollectedBy")
+  auditLogs           AuditLog[]
 
+  @@index([tenantId])
   @@map("users")
 }
 
 model Category {
   id          String    @id @default(uuid())
-  name        String    @unique
-  slug        String    @unique
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
   description String?
   imageUrl    String?
   isActive    Boolean   @default(true)
@@ -71,14 +176,18 @@ model Category {
 
   products    Product[]
 
+  @@unique([tenantId, slug])
+  @@index([tenantId])
   @@map("categories")
 }
 
 model Product {
   id             String         @id @default(uuid())
+  tenantId       String
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name           String
-  slug           String         @unique
-  sku            String         @unique
+  slug           String
+  sku            String
   description    String
   price          Float
   costPrice      Float?
@@ -94,6 +203,9 @@ model Product {
   images         ProductImage[]
   orderItems     OrderItem[]
 
+  @@unique([tenantId, sku])
+  @@unique([tenantId, slug])
+  @@index([tenantId])
   @@index([categoryId])
   @@index([sku])
   @@map("products")
@@ -104,6 +216,7 @@ model ProductImage {
   productId  String
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   imageUrl   String
+  altText    String?
   isPrimary  Boolean  @default(false)
   orderIndex Int      @default(0)
   createdAt  DateTime @default(now())
@@ -113,7 +226,9 @@ model ProductImage {
 
 model WhatsAppSession {
   id                String        @id @default(uuid())
-  sessionName       String        @unique @default("default")
+  tenantId          String
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessionName       String        @default("default")
   phoneNumber       String?
   status            SessionStatus @default(DISCONNECTED)
   qrCode            String?
@@ -123,14 +238,19 @@ model WhatsAppSession {
   updatedAt         DateTime      @updatedAt
   createdAt         DateTime      @default(now())
 
+  @@unique([tenantId, sessionName])
+  @@index([tenantId])
   @@map("whatsapp_sessions")
 }
 
 model ChatSession {
   id              String        @id @default(uuid())
-  customerPhone   String        @unique
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerPhone   String
   customerName    String?
   isBotActive     Boolean       @default(true)
+  isArchived      Boolean       @default(false)
   lastInteraction DateTime      @default(now())
   unreadCount     Int           @default(0)
   assignedUserId  String?
@@ -141,7 +261,9 @@ model ChatSession {
   messages        ChatMessage[]
   orders          Order[]
 
+  @@index([tenantId])
   @@index([customerPhone])
+  @@index([isArchived])
   @@map("chat_sessions")
 }
 
@@ -163,33 +285,44 @@ model ChatMessage {
 }
 
 model Order {
-  id              String       @id @default(uuid())
-  orderNumber     String       @unique
-  chatSessionId   String?
-  chatSession     ChatSession? @relation(fields: [chatSessionId], references: [id], onDelete: SetNull)
-  customerName    String
-  customerPhone   String
-  customerAddress String?
-  status          OrderStatus  @default(PENDING)
-  source          OrderSource  @default(WHATSAPP_BOT)
-  subtotal        Float
-  deliveryFee     Float        @default(0.0)
-  total           Float
-  paymentMethod   String?      @default("CULQI_PENDING")
-  culqiChargeId   String?
-  culqiRefundId   String?
-  paidAt          DateTime?
-  refundedAt      DateTime?
-  notes           String?
-  handledById     String?
-  handledBy       User?        @relation(fields: [handledById], references: [id], onDelete: SetNull)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id                  String        @id @default(uuid())
+  tenantId            String
+  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderNumber         String
+  chatSessionId       String?
+  chatSession         ChatSession?  @relation(fields: [chatSessionId], references: [id], onDelete: SetNull)
+  customerName        String
+  customerPhone       String
+  customerAddress     String?
+  status              OrderStatus   @default(PENDING)
+  source              OrderSource   @default(WHATSAPP_BOT)
+  subtotal            Float
+  deliveryFee         Float         @default(0.0)
+  total               Float
+  paymentMethod           PaymentMethod @default(PENDING)
+  paymentStatus           PaymentStatus @default(PENDING)
+  culqiChargeId           String?
+  culqiRefundId           String?
+  mercadoPagoPaymentId    String?
+  mercadoPagoPreferenceId String?
+  paidAt                  DateTime?
+  refundedAt          DateTime?
+  cashCollectedById   String?
+  cashCollectedBy     User?         @relation("CashCollectedBy", fields: [cashCollectedById], references: [id], onDelete: SetNull)
+  notes               String?
+  handledById         String?
+  handledBy           User?         @relation("HandledBy", fields: [handledById], references: [id], onDelete: SetNull)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
-  items           OrderItem[]
+  items               OrderItem[]
 
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
   @@index([status])
   @@index([customerPhone])
+  @@index([paymentMethod])
+  @@index([paymentStatus])
   @@map("orders")
 }
 
@@ -198,7 +331,7 @@ model OrderItem {
   orderId     String
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId   String
-  product     Product  @relation(fields: [productId], references: [id])
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   productName String
   unitPrice   Float
   quantity    Int
@@ -208,20 +341,26 @@ model OrderItem {
 }
 
 model BotKeyword {
-  id        String   @id @default(uuid())
-  keyword   String   @unique
-  matchType String   @default("EXACT")
+  id        String              @id @default(uuid())
+  tenantId  String
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  keyword   String
+  matchType BotKeywordMatchType @default(EXACT)
   response  String
   mediaUrl  String?
   action    String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
 
+  @@unique([tenantId, keyword])
+  @@index([tenantId])
   @@map("bot_keywords")
 }
 
 model AuditLog {
   id        String   @id @default(uuid())
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   action    String
@@ -231,19 +370,24 @@ model AuditLog {
   ipAddress String?
   createdAt DateTime @default(now())
 
+  @@index([tenantId])
+  @@index([userId])
+  @@index([createdAt])
   @@map("audit_logs")
 }
 
 model CompanyConfig {
   id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   companyName         String   @default("WSP Flow Commerce")
-  businessDescription String   @default("Tienda digital multirubro de comercio electrónico con atención y ventas automatizadas 24/7.")
-  systemPrompt        String   @default("Eres Luna, la asesora comercial y asistente virtual de ventas experta de WSP Flow. Tu objetivo es asesorar a los clientes con calidez y precisión, responder dudas sobre productos, verificar stock real, enviar fotos o videos cuando lo soliciten y concretar pedidos de compra de forma fluida.")
-  shippingPolicy      String   @default("Envíos express a todo el país en 24 a 48 horas hábiles.")
-  paymentMethods      String   @default("Transferencia bancaria, tarjetas de crédito/débito y pago contra entrega.")
+  businessDescription String   @default("Tienda digital de comercio electrónico con atención y ventas automatizadas 24/7.")
+  systemPrompt        String   @default("Eres Luna, la asesora comercial y asistente virtual de ventas experta de la tienda. Tu objetivo es asesorar a los clientes con calidez y precisión, responder dudas sobre productos, verificar stock real, enviar fotos o videos cuando lo soliciten y concretar pedidos de compra de forma fluida.")
+  shippingPolicy      String   @default("Envíos express en 24 a 48 horas hábiles.")
+  paymentMethods      String   @default("Transferencia bancaria, Yape, tarjetas de crédito/débito y pago contra entrega.")
   workingHours        String   @default("Lunes a Sábado de 09:00 a 20:00")
   address             String   @default("Av. Principal 1234, Centro")
-  aiModel             String   @default("gpt-5.6-luna")
+  aiModel             String   @default("gpt-4o-mini")
   aiTemperature       Float    @default(0.7)
   antiBanDelayMinMs   Int      @default(1500)
   antiBanDelayMaxMs   Int      @default(3500)
@@ -255,9 +399,51 @@ model CompanyConfig {
   deliveryZone3Price  Float    @default(20.0)
   deliveryProvincePrice Float  @default(15.0)
   freeShippingThreshold Float? @default(0.0)
+  storeTheme            String? // JSON: { templateId, accentColor, fontFamily, productLayout }
   updatedAt           DateTime @updatedAt
   createdAt           DateTime @default(now())
 
   @@map("company_config")
 }
 
+model BroadcastCampaign {
+  id               String               @id @default(uuid())
+  tenantId         String
+  tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title            String
+  messageTemplate  String
+  mediaUrl         String?
+  attachPdfCatalog Boolean              @default(false)
+  status           String               @default("DRAFT") // "DRAFT", "SENDING", "PAUSED", "COMPLETED", "CANCELLED"
+  targetSegment    String               @default("ALL_CUSTOMERS") // "ALL_CUSTOMERS", "FREQUENT_BUYERS", "PENDING_ORDERS", "RECENT_CONTACTS"
+  totalRecipients  Int                  @default(0)
+  sentCount        Int                  @default(0)
+  failedCount      Int                  @default(0)
+  deliveredCount   Int                  @default(0)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  recipients       BroadcastRecipient[]
+
+  @@index([tenantId])
+  @@map("broadcast_campaigns")
+}
+
+model BroadcastRecipient {
+  id            String            @id @default(uuid())
+  campaignId    String
+  campaign      BroadcastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerPhone String
+  customerName  String?
+  renderedText  String
+  status        String            @default("QUEUED") // "QUEUED", "SENDING", "SENT", "FAILED"
+  errorMessage  String?
+  sentAt        DateTime?
+  createdAt     DateTime          @default(now())
+
+  @@index([campaignId])
+  @@index([customerPhone])
+  @@map("broadcast_recipients")
+}

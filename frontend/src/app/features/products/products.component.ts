@@ -1,4 +1,5 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { forkJoin } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NavbarComponent } from '../../shared/components/navbar/navbar.component';
@@ -7,7 +8,9 @@ import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { ProductsService } from '../../core/services/products.service';
 import { UploadService } from '../../core/services/upload.service';
 import { AuthService } from '../../core/services/auth.service';
-import { Product, Category, ProductImage } from '../../core/models/models';
+import { ToastService } from '../../core/services/toast.service';
+import { TenantsService } from '../../core/services/tenants.service';
+import { Product, Category, ProductImage, TenantQuota } from '../../core/models/models';
 
 @Component({
   selector: 'app-products',
@@ -26,8 +29,8 @@ import { Product, Category, ProductImage } from '../../core/models/models';
           <div class="relative min-w-[240px] flex-1 sm:flex-initial">
             <input
               type="text"
-              [(ngModel)]="searchQuery"
-              (ngModelChange)="filterProducts()"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
               placeholder="Buscar por nombre, SKU..."
               class="input-bento pl-9"
             />
@@ -57,6 +60,16 @@ import { Product, Category, ProductImage } from '../../core/models/models';
 
         <!-- Action Buttons -->
         <div class="flex items-center gap-2.5 self-end sm:self-auto">
+          <!-- Quota Badge -->
+          @if (quota()) {
+            <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white text-xs font-semibold shadow-2xs"
+                 [class]="quota()!.products.isUnlimited ? 'border-zinc-200 text-zinc-600' : (quota()!.products.used >= quota()!.products.max ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-zinc-200 text-zinc-700')">
+              <span class="w-2 h-2 rounded-full" [class]="quota()!.products.used >= quota()!.products.max && !quota()!.products.isUnlimited ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'"></span>
+              <span>{{ quota()!.products.used }} / {{ quota()!.products.isUnlimited ? '∞' : quota()!.products.max }} prod.</span>
+              <span class="text-[10px] text-zinc-400 font-normal">({{ quota()!.planName }})</span>
+            </div>
+          }
+
           <button
             (click)="downloadPdf()"
             [disabled]="isGeneratingPdf()"
@@ -85,16 +98,32 @@ import { Product, Category, ProductImage } from '../../core/models/models';
 
       <!-- Bento Product Cards Grid -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        @for (product of filteredProducts(); track product.id) {
-          <app-bento-card customClass="flex flex-col justify-between group hover:border-indigo-300/80">
-            <div>
-              <!-- Product Image Frame -->
-              <div class="relative w-full h-44 rounded-2xl overflow-hidden bg-zinc-100 mb-4 border border-zinc-200/80">
-                <img
-                  [src]="getPrimaryImage(product)"
-                  [alt]="product.name"
-                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                />
+        @if (isLoading()) {
+          @for (i of [1,2,3,4,5,6,7,8]; track i) {
+            <app-bento-card customClass="flex flex-col justify-between animate-pulse">
+              <div>
+                <div class="w-full h-44 rounded-2xl bg-zinc-200/70 mb-4"></div>
+                <div class="space-y-2">
+                  <div class="h-3 bg-zinc-200 rounded w-16"></div>
+                  <div class="h-4 bg-zinc-200 rounded w-3/4"></div>
+                  <div class="h-5 bg-zinc-200 rounded w-24 mt-2"></div>
+                </div>
+              </div>
+            </app-bento-card>
+          }
+        } @else {
+          @for (product of filteredProducts(); track product.id) {
+            <app-bento-card customClass="flex flex-col justify-between group hover:border-indigo-300/80">
+              <div>
+                <!-- Product Image Frame -->
+                <div class="relative w-full h-44 rounded-2xl overflow-hidden bg-zinc-100 mb-4 border border-zinc-200/80">
+                  <img
+                    [src]="getPrimaryImage(product)"
+                    [alt]="product.name"
+                    loading="lazy"
+                    decoding="async"
+                    class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                  />
                 
                 <!-- SKU & Media Badges -->
                 <div class="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
@@ -205,6 +234,7 @@ import { Product, Category, ProductImage } from '../../core/models/models';
             <p class="text-xs text-zinc-500 mt-1">Prueba con otra búsqueda o añade un nuevo producto.</p>
           </div>
         }
+      }
       </div>
 
     </div>
@@ -431,13 +461,34 @@ import { Product, Category, ProductImage } from '../../core/models/models';
 export class ProductsComponent implements OnInit {
   private productsService = inject(ProductsService);
   private uploadService = inject(UploadService);
+  private tenantsService = inject(TenantsService);
+  private toast = inject(ToastService);
   authService = inject(AuthService);
 
+  quota = signal<TenantQuota | null>(null);
   products = signal<Product[]>([]);
-  filteredProducts = signal<Product[]>([]);
   categories = signal<Category[]>([]);
   selectedCategory = signal<string>('');
-  searchQuery = '';
+  searchQuery = signal<string>('');
+  isLoading = signal<boolean>(true);
+
+  filteredProducts = computed<Product[]>(() => {
+    let result = Array.isArray(this.products()) ? this.products() : [];
+    const cat = this.selectedCategory();
+    if (cat) {
+      result = result.filter((p) => p.categoryId === cat);
+    }
+    const q = this.searchQuery().toLowerCase().trim();
+    if (q) {
+      result = result.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q) ||
+          (p.description && p.description.toLowerCase().includes(q)),
+      );
+    }
+    return result;
+  });
 
   isModalOpen = signal(false);
   editingProduct = signal<Product | null>(null);
@@ -464,20 +515,27 @@ export class ProductsComponent implements OnInit {
   }
 
   loadData() {
-    this.productsService.getCategories().subscribe({
-      next: (cats: any) =>
+    this.isLoading.set(true);
+
+    // Cargar cuota actual del plan del tenant
+    this.tenantsService.getMyQuota().subscribe({
+      next: (q) => this.quota.set(q),
+      error: () => {},
+    });
+
+    forkJoin({
+      cats: this.productsService.getCategories(),
+      prods: this.productsService.getProducts(),
+    }).subscribe({
+      next: ({ cats, prods }: any) => {
+        this.isLoading.set(false);
         this.categories.set(
           Array.isArray(cats)
             ? cats
             : cats?.categories && Array.isArray(cats.categories)
             ? cats.categories
             : [],
-        ),
-      error: () => this.categories.set([]),
-    });
-
-    this.productsService.getProducts().subscribe({
-      next: (prods: any) => {
+        );
         this.products.set(
           Array.isArray(prods)
             ? prods
@@ -485,38 +543,17 @@ export class ProductsComponent implements OnInit {
             ? prods.products
             : [],
         );
-        this.filterProducts();
       },
       error: () => {
+        this.isLoading.set(false);
+        this.categories.set([]);
         this.products.set([]);
-        this.filteredProducts.set([]);
       },
     });
   }
 
   selectCategory(id: string) {
     this.selectedCategory.set(id);
-    this.filterProducts();
-  }
-
-  filterProducts() {
-    let result = Array.isArray(this.products()) ? this.products() : [];
-
-    if (this.selectedCategory()) {
-      result = result.filter((p) => p.categoryId === this.selectedCategory());
-    }
-
-    if (this.searchQuery.trim()) {
-      const q = this.searchQuery.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          (p.description && p.description.toLowerCase().includes(q)),
-      );
-    }
-
-    this.filteredProducts.set(result);
   }
 
   getPrimaryImage(product: Product): string {
@@ -534,7 +571,6 @@ export class ProductsComponent implements OnInit {
         this.products.update((list) =>
           list.map((p) => (p.id === updated.id ? { ...p, stock: updated.stock } : p)),
         );
-        this.filterProducts();
       },
     });
   }
@@ -556,7 +592,7 @@ export class ProductsComponent implements OnInit {
         },
         error: () => {
           this.isUploadingImage.set(false);
-          alert('Error al subir la imagen. Verifica el formato (JPG, PNG, WEBP).');
+          this.toast.error('Verifica el formato (JPG, PNG, WEBP).', 'Error al subir imagen');
           target.value = '';
         },
       });
@@ -570,7 +606,7 @@ export class ProductsComponent implements OnInit {
       
       // Validación de peso máximo estricto de 10MB
       if (file.size > 10 * 1024 * 1024) {
-        alert('⚠️ El archivo de video seleccionado supera el límite máximo permitido de 10MB.');
+        this.toast.warning('El archivo de video seleccionado supera el límite de 10MB.', 'Límite de Video');
         target.value = '';
         return;
       }
@@ -580,11 +616,12 @@ export class ProductsComponent implements OnInit {
         next: (res) => {
           this.formData.videoUrl = res.url;
           this.isUploadingVideo.set(false);
+          this.toast.success('Video subido correctamente', 'Multimedia');
           target.value = '';
         },
         error: () => {
           this.isUploadingVideo.set(false);
-          alert('Error al subir el video. Verifica que sea formato MP4, WEBM o MOV de menos de 10MB.');
+          this.toast.error('Verifica que sea formato MP4, WEBM o MOV de menos de 10MB.', 'Error al subir video');
           target.value = '';
         },
       });
@@ -605,6 +642,16 @@ export class ProductsComponent implements OnInit {
   }
 
   openCreateModal() {
+    // Validar si el tenant alcanzó el límite de productos de su plan
+    const q = this.quota();
+    if (q && !q.products.isUnlimited && q.products.used >= q.products.max) {
+      this.toast.warning(
+        `Has alcanzado el límite de ${q.products.max} productos permitidos para tu plan actual (${q.planName}). Actualiza tu plan en Configuración para registrar más productos.`,
+        'Límite de Plan Alcanzado',
+      );
+      return;
+    }
+
     this.editingProduct.set(null);
     this.formData = {
       name: '',
@@ -656,23 +703,38 @@ export class ProductsComponent implements OnInit {
       this.productsService.updateProduct(this.editingProduct()!.id, payload).subscribe({
         next: () => {
           this.isModalOpen.set(false);
+          this.toast.success('Producto actualizado exitosamente.');
           this.loadData();
         },
+        error: (err) => this.toast.error(err.error?.message || 'Error al actualizar producto.'),
       });
     } else {
       this.productsService.createProduct(payload).subscribe({
         next: () => {
           this.isModalOpen.set(false);
+          this.toast.success('Producto creado exitosamente.');
           this.loadData();
         },
+        error: (err) => this.toast.error(err.error?.message || 'Error al crear producto.'),
       });
     }
   }
 
-  deleteProduct(product: Product) {
-    if (confirm(`¿Estás seguro de eliminar "${product.name}"?`)) {
+  async deleteProduct(product: Product) {
+    const confirmed = await this.toast.confirm({
+      title: 'Eliminar Producto',
+      message: `¿Estás seguro de eliminar permanentemente "${product.name}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Sí, Eliminar',
+      type: 'danger',
+    });
+
+    if (confirmed) {
       this.productsService.deleteProduct(product.id).subscribe({
-        next: () => this.loadData(),
+        next: () => {
+          this.toast.success(`Producto "${product.name}" eliminado.`);
+          this.loadData();
+        },
+        error: (err) => this.toast.error(err.error?.message || 'Error al eliminar producto.'),
       });
     }
   }
@@ -690,10 +752,11 @@ export class ProductsComponent implements OnInit {
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
+        this.toast.success('Catálogo PDF descargado con éxito.');
       },
       error: () => {
         this.isGeneratingPdf.set(false);
-        alert('Error al generar el catálogo en PDF.');
+        this.toast.error('Error al generar el catálogo en PDF.');
       },
     });
   }

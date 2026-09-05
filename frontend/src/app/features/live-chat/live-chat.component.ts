@@ -17,6 +17,7 @@ import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { ChatService, PaginatedMessagesResponse } from '../../core/services/chat.service';
 import { SocketService } from '../../core/services/socket.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
 import { ChatSession, ChatMessage, MessageSender } from '../../core/models/models';
 
 @Component({
@@ -420,6 +421,7 @@ export class LiveChatComponent implements OnInit, OnDestroy {
   private chatService = inject(ChatService);
   private socketService = inject(SocketService);
   private route = inject(ActivatedRoute);
+  private toast = inject(ToastService);
   authService = inject(AuthService);
 
   @ViewChild('scrollContainer') scrollContainer?: ElementRef<HTMLDivElement>;
@@ -669,7 +671,7 @@ export class LiveChatComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isSending.set(false);
-        alert(err.error?.message || 'Error al enviar mensaje a WhatsApp.');
+        this.toast.error(err.error?.message || 'Error al enviar mensaje a WhatsApp.');
       },
     });
   }
@@ -731,10 +733,11 @@ export class LiveChatComponent implements OnInit, OnDestroy {
             },
           });
         }
+        this.toast.success('Conversación iniciada con éxito.');
       },
       error: (err) => {
         this.isCreatingChat.set(false);
-        alert(err.error?.message || 'Error creando la conversación.');
+        this.toast.error(err.error?.message || 'Error creando la conversación.');
       },
     });
   }
@@ -759,38 +762,68 @@ export class LiveChatComponent implements OnInit, OnDestroy {
   formatMessageContent(raw: string): string {
     if (!raw) return '';
 
-    // 1. Escapar HTML para evitar XSS
+    // 0. Limpiar enlaces envueltos en backticks o sintaxis markdown antes de procesar
     let text = raw
+      .replace(/`\s*(https?:\/\/[^\s`]+)\s*`/g, '$1')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1: $2');
+
+    // 1. Escapar HTML para evitar XSS
+    text = text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
-    // 2. Enlaces URL a links interactivos estilizados
-    const urlPattern = /(https?:\/\/[^\s]+)/g;
-    text = text.replace(urlPattern, (url) => {
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="underline font-semibold text-indigo-600 hover:text-indigo-800 transition-colors inline-flex items-center gap-0.5">${url}</a>`;
-    });
-
-    // 3. Negritas: **texto** y *texto* a <strong>
+    // 2. Negritas: **texto** y *texto* a <strong>
     text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
 
-    // 4. Cursivas: _texto_ a <em>
+    // 3. Cursivas: _texto_ a <em>
     text = text.replace(/_([^_\n]+)_/g, '<em>$1</em>');
 
-    // 5. Tachado: ~texto~ a <del>
+    // 4. Tachado: ~texto~ a <del>
     text = text.replace(/~([^~\n]+)~/g, '<del class="opacity-75">$1</del>');
 
-    // 6. Código en línea: `código` a <code>
+    // 5. Código en línea: `código` a <code>
     text = text.replace(
       /`([^`\n]+)`/g,
       '<code class="px-1.5 py-0.5 rounded bg-zinc-200/70 font-mono text-[11px] font-bold text-zinc-900">$1</code>',
     );
 
-    // 7. Corrección de signos de dólar accidentales a Soles
+    // 6. Enlaces URL a links interactivos estilizados (limpiando puntos o signos de cierre pegados al final)
+    const urlPattern = /(https?:\/\/[^\s<]+)/g;
+    text = text.replace(urlPattern, (matchedUrl) => {
+      // Separar puntuación accidental final como . , ) ]
+      let cleanUrl = matchedUrl;
+      let trailingPunctuation = '';
+      const matchTrail = cleanUrl.match(/[.,;:!?)]+$/);
+      if (matchTrail) {
+        trailingPunctuation = matchTrail[0];
+        cleanUrl = cleanUrl.substring(0, cleanUrl.length - trailingPunctuation.length);
+      }
+
+      return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="underline font-semibold text-indigo-600 hover:text-indigo-800 transition-colors inline-flex items-center gap-0.5 break-all">${cleanUrl} ↗</a>${trailingPunctuation}`;
+    });
+
+    // 7. Estilizar Notas de Voz de WhatsApp (Whisper AI)
+    if (text.includes('🎙️ [Nota de voz]:')) {
+      text = text.replace(
+        /🎙️ \[Nota de voz\]: &quot;(.*?)&quot;/g,
+        '<div class="p-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200/70 my-1"><div class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-800 mb-1"><span>🎙️ Audio Transcrito por Whisper AI:</span></div><p class="text-xs text-zinc-800 italic">"$1"</p></div>',
+      );
+    }
+
+    // 8. Estilizar Ubicación GPS
+    if (text.includes('📍 [Ubicación GPS:')) {
+      text = text.replace(
+        /📍 \[Ubicación GPS: (.*?)\]/g,
+        '<div class="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/70 my-1"><div class="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 mb-1"><span>📍 Ubicación GPS Compartida:</span></div><p class="text-xs font-mono text-zinc-800 font-semibold">$1</p></div>',
+      );
+    }
+
+    // 9. Corrección de signos de dólar accidentales a Soles
     text = text.replace(/\$(\s*\d+(\.\d+)?)/g, 'S/ $1');
 
-    // 8. Saltos de línea
+    // 10. Saltos de línea
     text = text.replace(/\n/g, '<br>');
 
     return text;

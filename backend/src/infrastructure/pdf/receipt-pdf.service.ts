@@ -270,10 +270,12 @@ export class ReceiptPdfService {
           .roundedRect(margin, tableY, contentWidth - summaryBoxWidth - 14, 90, 8)
           .fillAndStroke('#FFFFFF', '#E2E8F0');
 
-        const paymentLabel = order.paymentMethod?.includes('YAPE')
-          ? '💜 Yape Móvil (Culqi)'
+        const paymentLabel = order.paymentMethod?.includes('MERCADOPAGO')
+          ? '💙 Mercado Pago (Tarjetas / Yape)'
+          : order.paymentMethod?.includes('YAPE')
+          ? '💜 Yape Móvil'
           : order.paymentMethod?.includes('CARD') || order.paymentMethod?.includes('CULQI')
-          ? '💳 Tarjeta de Crédito / Débito (Culqi)'
+          ? '💳 Tarjeta de Crédito / Débito'
           : '💵 Pago / Contraentrega';
 
         doc
@@ -294,12 +296,13 @@ export class ReceiptPdfService {
           .fillColor(order.status === 'CONFIRMED' || order.status === 'DELIVERED' ? '#16A34A' : '#D97706')
           .text(order.status === 'CONFIRMED' || order.status === 'DELIVERED' ? '✓ PAGADO Y CONFIRMADO' : '⏳ PENDIENTE DE PAGO', margin + 14, tableY + 56);
 
-        if (order.culqiChargeId) {
+        const transactionRef = (order as any).mercadoPagoPaymentId || order.culqiChargeId;
+        if (transactionRef) {
           doc
             .font('Helvetica')
             .fontSize(7.5)
             .fillColor('#64748B')
-            .text(`Ref. Transacción: ${order.culqiChargeId}`, margin + 14, tableY + 70);
+            .text(`Ref. Transacción: ${transactionRef}`, margin + 14, tableY + 70);
         }
 
         // 5. FOOTER LEGAL

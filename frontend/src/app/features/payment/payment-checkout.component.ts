@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { ToastService } from '../../core/services/toast.service';
 import { environment } from '../../../environments/environment';
 
 export type DeliveryType = 'PICKUP' | 'HOME_DELIVERY' | 'PROVINCE_AGENCY';
@@ -26,6 +27,8 @@ export interface CheckoutOrderData {
     subtotal: number;
   }[];
   culqiPublicKey?: string;
+  mercadoPagoPublicKey?: string;
+  isMercadoPagoConnected?: boolean;
 }
 
 @Component({
@@ -112,8 +115,8 @@ export interface CheckoutOrderData {
               </div>
               @if (lastChargeId()) {
                 <div class="flex justify-between border-t border-zinc-200 pt-2 text-[11px] font-mono text-zinc-500">
-                  <span>ID Transacción Culqi:</span>
-                  <span class="font-bold text-indigo-600">{{ lastChargeId() }}</span>
+                  <span>ID Transacción / Referencia:</span>
+                  <span class="font-bold text-sky-600">{{ lastChargeId() }}</span>
                 </div>
               }
             </div>
@@ -411,173 +414,91 @@ export interface CheckoutOrderData {
 
               </div>
               
-              <!-- 3. PASARELA DE PAGO CULQI (Yape & Tarjeta) -->
-              <div class="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-sm">
+              <!-- 3. PASARELA DE PAGO MERCADO PAGO OFICIAL -->
+              <div class="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-sm space-y-4">
                 
-                <div class="flex items-center justify-between mb-1">
-                  <h3 class="text-base font-bold text-zinc-900">Método de Pago</h3>
-                  <span class="px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 font-mono text-[11px] font-bold border border-purple-100">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-sky-50 text-[#009ee3] flex items-center justify-center font-bold">
+                      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 class="text-base font-bold text-zinc-900">Método de Pago</h3>
+                      <p class="text-xs text-zinc-500">Procesamiento seguro e instantáneo respaldado por Mercado Pago Perú.</p>
+                    </div>
+                  </div>
+                  <span class="px-2.5 py-1 rounded-xl bg-sky-50 text-sky-700 font-mono text-[11px] font-bold border border-sky-100">
                     Paso 3
                   </span>
                 </div>
-                <p class="text-xs text-zinc-500 mb-5">Procesamiento seguro e instantáneo respaldado por Culqi en Soles (PEN).</p>
 
-                <!-- Method Switcher Pills -->
-                <div class="grid grid-cols-2 gap-2 p-1 bg-zinc-100 rounded-2xl mb-6">
-                  <button
-                    type="button"
-                    (click)="selectedMethod.set('yape')"
-                    [class]="'py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ' + (selectedMethod() === 'yape' ? 'bg-purple-600 text-white shadow-sm' : 'text-zinc-600 hover:text-zinc-900')"
-                  >
-                    <span>💜 Yape</span>
-                  </button>
-                  <button
-                    type="button"
-                    (click)="selectedMethod.set('card')"
-                    [class]="'py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ' + (selectedMethod() === 'card' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-600 hover:text-zinc-900')"
-                  >
-                    <span>💳 Tarjeta Débito / Crédito</span>
-                  </button>
+                <!-- Mercado Pago Showcase Card -->
+                <div class="p-5 rounded-2xl bg-gradient-to-br from-sky-50/90 via-sky-50/40 to-white border border-sky-200/80 space-y-3.5">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span class="text-xs font-bold text-sky-950 font-mono uppercase tracking-wider">Checkout Seguro Oficial</span>
+                    </div>
+                    <span class="text-[11px] font-semibold text-sky-700 bg-sky-100/70 px-2 py-0.5 rounded-md">
+                      Acreditación Inmediata
+                    </span>
+                  </div>
+
+                  <p class="text-xs text-sky-900 leading-relaxed">
+                    Al hacer clic en pagar, podrás elegir tu medio favorito en la ventana protegida de Mercado Pago:
+                  </p>
+
+                  <!-- Badges / Payment Methods Supported -->
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                    <div class="p-3 rounded-xl bg-white border border-sky-100 shadow-2xs text-center flex flex-col items-center justify-center group hover:border-sky-300 transition-colors">
+                      <span class="text-xl">💳</span>
+                      <span class="text-xs font-bold text-zinc-800 mt-1">Tarjetas</span>
+                      <span class="text-[10px] text-zinc-400">Visa / Mastercard / Amex</span>
+                    </div>
+
+                    <div class="p-3 rounded-xl bg-white border border-purple-100 shadow-2xs text-center flex flex-col items-center justify-center group hover:border-purple-300 transition-colors">
+                      <span class="text-xl">💜</span>
+                      <span class="text-xs font-bold text-purple-900 mt-1">Yape</span>
+                      <span class="text-[10px] text-purple-600/80">Directo sin recargo</span>
+                    </div>
+
+                    <div class="p-3 rounded-xl bg-white border border-amber-100 shadow-2xs text-center flex flex-col items-center justify-center group hover:border-amber-300 transition-colors">
+                      <span class="text-xl">💵</span>
+                      <span class="text-xs font-bold text-amber-900 mt-1">PagoEfectivo</span>
+                      <span class="text-[10px] text-amber-700/80">Bancos y Agentes</span>
+                    </div>
+
+                    <div class="p-3 rounded-xl bg-white border border-emerald-100 shadow-2xs text-center flex flex-col items-center justify-center group hover:border-emerald-300 transition-colors">
+                      <span class="text-xl">📱</span>
+                      <span class="text-xs font-bold text-emerald-900 mt-1">Dinero en MP</span>
+                      <span class="text-[10px] text-emerald-600/80">Cuenta digital</span>
+                    </div>
+                  </div>
                 </div>
 
-                <!-- TAB 1: YAPE PAYMENT -->
-                @if (selectedMethod() === 'yape') {
-                  <form (ngSubmit)="processYape()" class="space-y-4 animate-fade-in">
-                    
-                    <div class="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200/70 text-purple-950 text-xs space-y-1">
-                      <div class="font-bold flex items-center gap-1.5">
-                        <span>📱 ¿Cómo pagar con Yape?</span>
-                      </div>
-                      <ol class="list-decimal list-inside text-[11px] text-purple-900 space-y-0.5">
-                        <li>Abre tu app <b>Yape</b> en tu teléfono.</li>
-                        <li>Toca el menú lateral y pulsa <b>"Código de Aprobación"</b>.</li>
-                        <li>Ingresa tu número de celular y el código de 6 dígitos aquí.</li>
-                      </ol>
-                    </div>
+                <!-- CTA Button -->
+                <button
+                  type="button"
+                  (click)="processMercadoPago()"
+                  [disabled]="isProcessingPayment()"
+                  class="w-full py-4 rounded-2xl bg-[#009ee3] hover:bg-[#0089c7] text-white font-bold text-sm sm:text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
+                >
+                  @if (isProcessingPayment()) {
+                    <span class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Conectando con Mercado Pago...</span>
+                  } @else {
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                    </svg>
+                    <span>Pagar S/ {{ orderData()?.total | number: '1.2-2' }} con Mercado Pago</span>
+                  }
+                </button>
 
-                    <div>
-                      <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">
-                        Número de Celular Yape *
-                      </label>
-                      <input
-                        type="tel"
-                        [(ngModel)]="yapePhone"
-                        name="yapePhone"
-                        required
-                        maxlength="9"
-                        placeholder="987654321"
-                        class="input-bento text-xs font-mono font-semibold"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">
-                        Código de Aprobación Yape (OTP 6 dígitos) *
-                      </label>
-                      <input
-                        type="password"
-                        [(ngModel)]="yapeOtp"
-                        name="yapeOtp"
-                        required
-                        maxlength="6"
-                        placeholder="••••••"
-                        class="input-bento text-xs font-mono font-bold tracking-widest text-center text-lg"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      [disabled]="isProcessingPayment() || !yapeOtp || !yapePhone"
-                      class="w-full py-3.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                    >
-                      @if (isProcessingPayment()) {
-                        <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                        <span>Validando Yape...</span>
-                      } @else {
-                        <span>Pagar S/ {{ orderData()?.total | number: '1.2-2' }} con Yape</span>
-                      }
-                    </button>
-                  </form>
-                }
-
-                <!-- TAB 2: CREDIT / DEBIT CARD -->
-                @if (selectedMethod() === 'card') {
-                  <form (ngSubmit)="processCard()" class="space-y-4 animate-fade-in">
-                    
-                    <div>
-                      <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">
-                        Nombre impreso en la Tarjeta *
-                      </label>
-                      <input
-                        type="text"
-                        [(ngModel)]="cardHolder"
-                        name="cardHolder"
-                        required
-                        placeholder="JUAN PEREZ"
-                        class="input-bento text-xs uppercase font-semibold"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">
-                        Número de Tarjeta (Visa, Mastercard, Amex) *
-                      </label>
-                      <input
-                        type="text"
-                        [(ngModel)]="cardNumber"
-                        name="cardNumber"
-                        required
-                        maxlength="19"
-                        placeholder="4111 2222 3333 4444"
-                        class="input-bento text-xs font-mono tracking-wider font-semibold"
-                      />
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                      <div>
-                        <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">
-                          Vencimiento (MM/AA) *
-                        </label>
-                        <input
-                          type="text"
-                          [(ngModel)]="cardExpiry"
-                          name="cardExpiry"
-                          required
-                          maxlength="5"
-                          placeholder="12/28"
-                          class="input-bento text-xs font-mono text-center font-semibold"
-                        />
-                      </div>
-                      <div>
-                        <label class="block text-zinc-500 font-mono text-[11px] uppercase tracking-wider font-semibold mb-1">
-                          CVV / CVC (3-4 dígitos) *
-                        </label>
-                        <input
-                          type="password"
-                          [(ngModel)]="cardCvv"
-                          name="cardCvv"
-                          required
-                          maxlength="4"
-                          placeholder="•••"
-                          class="input-bento text-xs font-mono text-center font-bold"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      [disabled]="isProcessingPayment() || !cardNumber || !cardExpiry || !cardCvv"
-                      class="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                    >
-                      @if (isProcessingPayment()) {
-                        <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                        <span>Procesando pago con Culqi...</span>
-                      } @else {
-                        <span>Pagar S/ {{ orderData()?.total | number: '1.2-2' }} con Tarjeta</span>
-                      }
-                    </button>
-                  </form>
-                }
+                <p class="text-[11px] text-zinc-400 text-center font-mono">
+                  🔒 Conexión encriptada SSL de 256 bits. Transacción procesada por Mercado Pago.
+                </p>
 
               </div>
 
@@ -652,7 +573,7 @@ export interface CheckoutOrderData {
 
                 <!-- Security Guarantee Badge -->
                 <div class="pt-2 flex items-center justify-center gap-3 text-[10px] text-zinc-400 font-mono">
-                  <span>🔒 Culqi Verified</span>
+                  <span>🔒 Mercado Pago Protegido</span>
                   <span>•</span>
                   <span>🛡️ Garantía WSP Flow</span>
                 </div>
@@ -668,7 +589,7 @@ export interface CheckoutOrderData {
 
       <!-- Footer -->
       <footer class="text-center text-[11px] text-zinc-400 font-mono mt-12">
-        Pagos protegidos y respaldados por la pasarela oficial Culqi & WSP Flow SaaS en Perú.
+        Pagos 100% protegidos y respaldados por Mercado Pago & WSP Flow SaaS en Perú.
       </footer>
 
     </div>
@@ -677,6 +598,7 @@ export interface CheckoutOrderData {
 export class PaymentCheckoutComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private http = inject(HttpClient);
+  private toast = inject(ToastService);
 
   orderNumber = '';
   orderData = signal<CheckoutOrderData | null>(null);
@@ -698,28 +620,46 @@ export class PaymentCheckoutComponent implements OnInit {
   provinceAgency = 'Shalom';
 
   // Payment Form State
-  selectedMethod = signal<'yape' | 'card'>('yape');
   isProcessingPayment = signal(false);
   isPaidSuccess = signal(false);
   lastChargeId = signal<string | null>(null);
 
-  // Yape Form
-  yapePhone = '';
-  yapeOtp = '';
-
-  // Card Form
-  cardHolder = '';
-  cardNumber = '';
-  cardExpiry = '';
-  cardCvv = '';
-
   ngOnInit() {
     this.orderNumber = this.route.snapshot.paramMap.get('orderNumber') || '';
     if (this.orderNumber) {
+      this.checkReturnStatus();
       this.loadOrderData();
     } else {
       this.errorMessage.set('Código de orden no especificado en la URL');
       this.isLoading.set(false);
+    }
+  }
+
+  checkReturnStatus() {
+    const q = this.route.snapshot.queryParams;
+    const status = q['status'] || q['collection_status'];
+    const paymentId = q['payment_id'] || q['collection_id'];
+
+    if (status === 'approved' || paymentId) {
+      this.http
+        .post<any>(`${environment.apiUrl}/payments/mercadopago/confirm-return`, {
+          orderNumber: this.orderNumber,
+          paymentId: paymentId ? String(paymentId) : undefined,
+          status: status || 'approved',
+        })
+        .subscribe({
+          next: (res) => {
+            if (res.success && res.order) {
+              this.orderData.set(res.order);
+              this.isPaidSuccess.set(true);
+              this.lastChargeId.set(res.order.mercadoPagoPaymentId || (paymentId ? String(paymentId) : 'MP-CONFIRMED'));
+              this.toast.success('¡Pago validado y confirmado con éxito por Mercado Pago!', '¡Compra Confirmada!');
+            }
+          },
+          error: (err) => {
+            console.warn('Advertencia al verificar retorno de Mercado Pago:', err);
+          },
+        });
     }
   }
 
@@ -728,10 +668,8 @@ export class PaymentCheckoutComponent implements OnInit {
     this.http.get<CheckoutOrderData>(`${environment.apiUrl}/payments/order/${this.orderNumber}`).subscribe({
       next: (data) => {
         this.orderData.set(data);
-        this.customerName = data.customerName || '';
-        this.customerPhone = data.customerPhone ? data.customerPhone.replace(/\D/g, '').slice(-9) : '';
-        this.yapePhone = this.customerPhone;
-        this.cardHolder = data.customerName || '';
+        const rawPhone = data.customerPhone ? data.customerPhone.replace(/\D/g, '') : '';
+        this.customerPhone = rawPhone || data.customerPhone || '';
 
         // Extract DNI from notes if previously saved
         if (data.notes && data.notes.includes('DNI:')) {
@@ -813,55 +751,37 @@ export class PaymentCheckoutComponent implements OnInit {
     });
   }
 
-  processYape() {
+  processMercadoPago() {
     if (!this.orderData()) return;
     this.isProcessingPayment.set(true);
 
-    const payload = {
-      orderNumber: this.orderData()!.orderNumber,
-      yapeOtp: this.yapeOtp,
-      yapePhone: this.yapePhone || this.customerPhone,
-      email: this.customerEmail || 'cliente@wspflow.com',
-    };
+    // Sincronizar datos de contacto y entrega antes de redirigir
+    this.saveContactAndDelivery();
 
-    this.http.post<any>(`${environment.apiUrl}/payments/pay-yape`, payload).subscribe({
-      next: (res) => {
-        this.isProcessingPayment.set(false);
-        this.lastChargeId.set(res.chargeId);
-        this.isPaidSuccess.set(true);
-      },
-      error: (err) => {
-        this.isProcessingPayment.set(false);
-        alert(err.error?.message || 'Error al validar el pago con Yape. Verifica tu código de aprobación.');
-      },
-    });
+    this.http
+      .post<any>(`${environment.apiUrl}/payments/mercadopago/create-preference`, {
+        orderNumber: this.orderData()!.orderNumber,
+      })
+      .subscribe({
+        next: (res) => {
+          const redirectUrl = res.initPoint || res.sandboxInitPoint;
+          if (redirectUrl) {
+            window.location.href = redirectUrl;
+          } else {
+            this.isProcessingPayment.set(false);
+            this.toast.error('No se pudo generar el enlace de pago de Mercado Pago.');
+          }
+        },
+        error: (err) => {
+          this.isProcessingPayment.set(false);
+          this.toast.error(
+            err.error?.message || 'Error al conectar con la pasarela Mercado Pago. Por favor intenta nuevamente.',
+          );
+        },
+      });
   }
 
-  processCard() {
-    if (!this.orderData()) return;
-    this.isProcessingPayment.set(true);
 
-    const simulatedTokenId = `tkn_test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-
-    const payload = {
-      orderNumber: this.orderData()!.orderNumber,
-      tokenId: simulatedTokenId,
-      email: this.customerEmail || 'cliente@wspflow.com',
-      phone: this.customerPhone || this.orderData()!.customerPhone,
-    };
-
-    this.http.post<any>(`${environment.apiUrl}/payments/pay-card`, payload).subscribe({
-      next: (res) => {
-        this.isProcessingPayment.set(false);
-        this.lastChargeId.set(res.chargeId);
-        this.isPaidSuccess.set(true);
-      },
-      error: (err) => {
-        this.isProcessingPayment.set(false);
-        alert(err.error?.message || 'Error al procesar el pago con tarjeta.');
-      },
-    });
-  }
 
   getWhatsAppShareText(): string {
     const ord = this.orderData();

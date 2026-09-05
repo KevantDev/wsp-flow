@@ -1,10 +1,12 @@
 export enum Role {
+  SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
   SUBADMIN = 'SUBADMIN',
 }
 
 export class UserEntity {
   id: string;
+  tenantId?: string;
   email: string;
   passwordHash: string;
   fullName: string;

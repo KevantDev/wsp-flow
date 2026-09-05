@@ -136,15 +136,25 @@ import { AuthService } from '../../../core/services/auth.service';
           <p class="text-zinc-400 font-mono text-[10px] uppercase tracking-wider font-semibold text-center mb-3">
             Acceso Rápido Demostrativo
           </p>
-          <div class="grid grid-cols-2 gap-2.5">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              type="button"
+              (click)="fillCredentials('superadmin@wspflow.com', 'Admin123456!')"
+              class="p-2.5 rounded-2xl bg-zinc-50 hover:bg-purple-50/60 hover:border-purple-200 border border-zinc-200/80 text-left transition-all active:scale-[0.98] group"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-purple-700 group-hover:text-purple-800">👑 Super Admin</span>
+              </div>
+              <span class="block text-[10px] text-zinc-500 truncate mt-0.5">superadmin&#64;wspflow.com</span>
+            </button>
+
             <button
               type="button"
               (click)="fillCredentials('admin@wspflow.com', 'Admin123456!')"
               class="p-2.5 rounded-2xl bg-zinc-50 hover:bg-indigo-50/60 hover:border-indigo-200 border border-zinc-200/80 text-left transition-all active:scale-[0.98] group"
             >
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-indigo-700 group-hover:text-indigo-800">👑 Admin</span>
-                <kbd class="kbd-badge">1</kbd>
+                <span class="text-xs font-bold text-indigo-700 group-hover:text-indigo-800">🏢 Admin Tech</span>
               </div>
               <span class="block text-[10px] text-zinc-500 truncate mt-0.5">admin&#64;wspflow.com</span>
             </button>
@@ -155,11 +165,15 @@ import { AuthService } from '../../../core/services/auth.service';
               class="p-2.5 rounded-2xl bg-zinc-50 hover:bg-emerald-50/60 hover:border-emerald-200 border border-zinc-200/80 text-left transition-all active:scale-[0.98] group"
             >
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-emerald-700 group-hover:text-emerald-800">👤 Subadmin</span>
-                <kbd class="kbd-badge">2</kbd>
+                <span class="text-xs font-bold text-emerald-700 group-hover:text-emerald-800">👤 Asesor</span>
               </div>
               <span class="block text-[10px] text-zinc-500 truncate mt-0.5">subadmin&#64;wspflow.com</span>
             </button>
+          </div>
+
+          <div class="mt-6 text-center text-xs text-zinc-500">
+            ¿Eres emprendedor y quieres tu propia tienda?
+            <a href="/register-store" class="text-indigo-600 font-bold hover:underline ml-1">Crear Tienda SaaS</a>
           </div>
         </div>
 
@@ -189,7 +203,9 @@ export class LoginComponent {
     this.authService.login({ email: this.email, password: this.password }).subscribe({
       next: () => {
         this.isLoading.set(false);
-        this.router.navigate(['/dashboard']);
+        // Super Admin va a su panel de plataforma SaaS; el resto al dashboard de tienda
+        const destination = this.authService.isSuperAdmin() ? '/admin' : '/dashboard';
+        this.router.navigate([destination]);
       },
       error: (err) => {
         this.isLoading.set(false);

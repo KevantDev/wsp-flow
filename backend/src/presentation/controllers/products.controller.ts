@@ -4,6 +4,7 @@ import { ProductsService } from '../../application/services/products.service';
 import { CreateProductDto, UpdateProductDto, UpdateStockDto } from '../../application/dtos/product.dto';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { Public } from '../../core/decorators/public.decorator';
+import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import { Role } from '../../domain/entities/user.entity';
 import { CatalogPdfService } from '../../infrastructure/pdf/catalog-pdf.service';
 
@@ -16,11 +17,11 @@ export class ProductsController {
 
   @Public()
   @Get('catalog/pdf')
-  async downloadCatalogPdf(@Res() res: Response) {
-    const { buffer } = await this.catalogPdfService.generateCatalogPdf();
+  async downloadCatalogPdf(@Query('tenantId') queryTenantId: string, @Res() res: Response) {
+    const { buffer } = await this.catalogPdfService.generateCatalogPdf(queryTenantId);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="Catalogo_WSP_Flow.pdf"',
+      'Content-Disposition': 'inline; filename="Catalogo_Productos.pdf"',
       'Content-Length': buffer.length,
     });
     return res.end(buffer);
@@ -28,47 +29,59 @@ export class ProductsController {
 
   @Roles(Role.ADMIN, Role.SUBADMIN)
   @Post('catalog/generate-pdf')
-  async regenerateCatalogPdf() {
-    const { filePath } = await this.catalogPdfService.generateCatalogPdf();
+  async regenerateCatalogPdf(@CurrentTenant() tenantId: string) {
+    const { filePath } = await this.catalogPdfService.generateCatalogPdf(tenantId);
     return {
       success: true,
       message: 'Catálogo PDF generado exitosamente',
-      downloadUrl: '/api/v1/products/catalog/pdf',
+      downloadUrl: `/api/v1/products/catalog/pdf?tenantId=${tenantId}`,
       filePath,
     };
   }
 
   @Get()
-  async getAll(@Query('categoryId') categoryId?: string, @Query('search') search?: string) {
-    return this.productsService.getAll(categoryId, search);
+  async getAll(
+    @CurrentTenant() tenantId: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.productsService.getAll(tenantId, categoryId, search);
   }
 
   @Get(':id')
-  async getById(@Param('id') id: string) {
-    return this.productsService.getById(id);
+  async getById(@Param('id') id: string, @CurrentTenant() tenantId: string) {
+    return this.productsService.getById(id, tenantId);
   }
 
   @Roles(Role.ADMIN, Role.SUBADMIN)
   @Post()
-  async create(@Body() dto: CreateProductDto) {
-    return this.productsService.create(dto);
+  async create(@Body() dto: CreateProductDto, @CurrentTenant() tenantId: string) {
+    return this.productsService.create(dto, tenantId);
   }
 
   @Roles(Role.ADMIN, Role.SUBADMIN)
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
-    return this.productsService.update(id, dto);
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductDto,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.productsService.update(id, dto, tenantId);
   }
 
   @Roles(Role.ADMIN, Role.SUBADMIN)
   @Patch(':id/stock')
-  async updateStock(@Param('id') id: string, @Body() dto: UpdateStockDto) {
-    return this.productsService.updateStock(id, dto);
+  async updateStock(
+    @Param('id') id: string,
+    @Body() dto: UpdateStockDto,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.productsService.updateStock(id, dto, tenantId);
   }
 
   @Roles(Role.ADMIN)
   @Delete(':id')
-  async delete(@Param('id') id: string) {
-    return this.productsService.delete(id);
+  async delete(@Param('id') id: string, @CurrentTenant() tenantId: string) {
+    return this.productsService.delete(id, tenantId);
   }
 }

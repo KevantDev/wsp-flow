@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { CartService } from '../../../core/services/cart.service';
+import { ToastService } from '../../../core/services/toast.service';
 import { environment } from '../../../../environments/environment';
 
 export type CartDeliveryMethod = 'PICKUP' | 'HOME_DELIVERY' | 'PROVINCE_AGENCY';
@@ -272,6 +273,7 @@ export class CartDrawerComponent {
   cartService = inject(CartService);
   private http = inject(HttpClient);
   private router = inject(Router);
+  private toast = inject(ToastService);
 
   deliveryMethod = signal<CartDeliveryMethod>('PICKUP');
   customerName = '';
@@ -316,7 +318,7 @@ export class CartDrawerComponent {
       },
       error: (err) => {
         this.isCheckingOut.set(false);
-        alert(err.error?.message || 'Error al procesar el pedido.');
+        this.toast.error(err.error?.message || 'Error al procesar el pedido.');
       },
     });
   }

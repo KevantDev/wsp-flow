@@ -10,6 +10,7 @@ export class PrismaProductRepository implements IProductRepository {
   private mapToEntity(p: any): ProductEntity {
     return new ProductEntity({
       id: p.id,
+      tenantId: p.tenantId,
       name: p.name,
       slug: p.slug,
       sku: p.sku,
@@ -26,6 +27,7 @@ export class PrismaProductRepository implements IProductRepository {
         id: img.id,
         productId: img.productId,
         imageUrl: img.imageUrl,
+        altText: img.altText,
         isPrimary: img.isPrimary,
         orderIndex: img.orderIndex,
         createdAt: img.createdAt,
@@ -35,35 +37,50 @@ export class PrismaProductRepository implements IProductRepository {
     });
   }
 
-  async findById(id: string): Promise<ProductEntity | null> {
-    const product = await this.prisma.product.findUnique({
-      where: { id },
+  async findById(id: string, tenantId?: string): Promise<ProductEntity | null> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const product = await this.prisma.product.findFirst({
+      where,
       include: { category: true, images: { orderBy: { orderIndex: 'asc' } } },
     });
     if (!product) return null;
     return this.mapToEntity(product);
   }
 
-  async findBySku(sku: string): Promise<ProductEntity | null> {
-    const product = await this.prisma.product.findUnique({
-      where: { sku },
+  async findBySku(sku: string, tenantId?: string): Promise<ProductEntity | null> {
+    const where: any = { sku };
+    if (tenantId) where.tenantId = tenantId;
+
+    const product = await this.prisma.product.findFirst({
+      where,
       include: { category: true, images: { orderBy: { orderIndex: 'asc' } } },
     });
     if (!product) return null;
     return this.mapToEntity(product);
   }
 
-  async findBySlug(slug: string): Promise<ProductEntity | null> {
-    const product = await this.prisma.product.findUnique({
-      where: { slug },
+  async findBySlug(slug: string, tenantId?: string): Promise<ProductEntity | null> {
+    const where: any = { slug };
+    if (tenantId) where.tenantId = tenantId;
+
+    const product = await this.prisma.product.findFirst({
+      where,
       include: { category: true, images: { orderBy: { orderIndex: 'asc' } } },
     });
     if (!product) return null;
     return this.mapToEntity(product);
   }
 
-  async findAll(filters?: { categoryId?: string; search?: string; onlyAvailable?: boolean }): Promise<ProductEntity[]> {
+  async findAll(filters?: {
+    tenantId?: string;
+    categoryId?: string;
+    search?: string;
+    onlyAvailable?: boolean;
+  }): Promise<ProductEntity[]> {
     const where: any = {};
+    if (filters?.tenantId) where.tenantId = filters.tenantId;
     if (filters?.categoryId) where.categoryId = filters.categoryId;
     if (filters?.onlyAvailable) where.isAvailable = true;
     if (filters?.search) {
@@ -82,9 +99,13 @@ export class PrismaProductRepository implements IProductRepository {
     return products.map((p) => this.mapToEntity(p));
   }
 
-  async create(product: Partial<ProductEntity>, images?: { imageUrl: string; isPrimary: boolean }[]): Promise<ProductEntity> {
+  async create(
+    product: Partial<ProductEntity>,
+    images?: { imageUrl: string; isPrimary: boolean; altText?: string }[],
+  ): Promise<ProductEntity> {
     const created = await this.prisma.product.create({
       data: {
+        tenantId: product.tenantId!,
         name: product.name!,
         slug: product.slug!,
         sku: product.sku!,
@@ -96,28 +117,35 @@ export class PrismaProductRepository implements IProductRepository {
         isAvailable: product.isAvailable ?? true,
         videoUrl: product.videoUrl,
         categoryId: product.categoryId!,
-        images: images && images.length > 0
-          ? {
-              create: images.map((img, idx) => ({
-                imageUrl: img.imageUrl,
-                isPrimary: img.isPrimary ?? idx === 0,
-                orderIndex: idx,
-              })),
-            }
-          : undefined,
+        images:
+          images && images.length > 0
+            ? {
+                create: images.map((img, idx) => ({
+                  imageUrl: img.imageUrl,
+                  altText: img.altText,
+                  isPrimary: img.isPrimary ?? idx === 0,
+                  orderIndex: idx,
+                })),
+              }
+            : undefined,
       },
       include: { category: true, images: true },
     });
     return this.mapToEntity(created);
   }
 
-  async update(id: string, product: Partial<ProductEntity>, images?: { imageUrl: string; isPrimary: boolean }[]): Promise<ProductEntity> {
+  async update(
+    id: string,
+    product: Partial<ProductEntity>,
+    images?: { imageUrl: string; isPrimary: boolean; altText?: string }[],
+  ): Promise<ProductEntity> {
     if (images && images.length > 0) {
       await this.prisma.productImage.deleteMany({ where: { productId: id } });
       await this.prisma.productImage.createMany({
         data: images.map((img, idx) => ({
           productId: id,
           imageUrl: img.imageUrl,
+          altText: img.altText,
           isPrimary: img.isPrimary ?? idx === 0,
           orderIndex: idx,
         })),
@@ -182,12 +210,16 @@ export class PrismaProductRepository implements IProductRepository {
     return true;
   }
 
-  async countTotal(): Promise<number> {
-    return this.prisma.product.count();
+  async countTotal(tenantId?: string): Promise<number> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+    return this.prisma.product.count({ where });
   }
 
-  async countLowStock(): Promise<number> {
-    const products = await this.prisma.product.findMany();
+  async countLowStock(tenantId?: string): Promise<number> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+    const products = await this.prisma.product.findMany({ where });
     return products.filter((p) => p.stock <= p.minStockAlert).length;
   }
 }
