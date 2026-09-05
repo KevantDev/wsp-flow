@@ -187,6 +187,22 @@ import { AdminMetrics, EnrichedTenant, TenantStatus, TenantPlan } from '../../..
                   </div>
                 </div>
               </div>
+              <!-- Basic -->
+              <div class="flex items-center gap-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0"></span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-semibold text-zinc-700">BASIC</span>
+                    <span class="text-xs font-bold text-zinc-900">{{ m.planDistribution.basic || 0 }}</span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+                    <div
+                      class="h-full rounded-full bg-blue-500 transition-all duration-700"
+                      [style.width.%]="m.totalTenants > 0 ? ((m.planDistribution.basic || 0) / m.totalTenants * 100) : 0"
+                    ></div>
+                  </div>
+                </div>
+              </div>
               <!-- PRO -->
               <div class="flex items-center gap-3">
                 <span class="w-2.5 h-2.5 rounded-full bg-indigo-500 flex-shrink-0"></span>

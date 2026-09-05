@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { BentoCardComponent } from '../../shared/components/bento-card/bento-card.component';
 import { StatsCardComponent } from '../../shared/components/stats-card/stats-card.component';
@@ -447,6 +447,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private dashboardService = inject(DashboardService);
   private whatsappService = inject(WhatsAppService);
   private socketService = inject(SocketService);
+  private router = inject(Router);
   authService = inject(AuthService);
 
   metrics = signal<DashboardMetrics | null>(null);
@@ -456,6 +457,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private subs: Subscription[] = [];
 
   ngOnInit() {
+    // Si el usuario es Super Admin de la plataforma SaaS y no está impersonando una tienda, redirigir a su Dashboard Global
+    if (this.authService.isSuperAdmin() && !this.authService.isImpersonating()) {
+      this.router.navigate(['/admin']);
+      return;
+    }
+
     this.loadMetrics();
     this.listenWebSockets();
   }

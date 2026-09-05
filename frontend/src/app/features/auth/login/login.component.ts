@@ -31,19 +31,7 @@ import { AuthService } from '../../../core/services/auth.service';
           </p>
         </div>
 
-        <!-- System Capability Pill Tags -->
-        <div class="flex flex-wrap items-center justify-center gap-1.5 mb-6">
-          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Baileys WhatsApp
-          </span>
-          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold bg-purple-50 text-purple-700 border border-purple-200/80">
-            🤖 GPT-5.6-luna
-          </span>
-          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold bg-blue-50 text-blue-700 border border-blue-200/80">
-            🐘 PostgreSQL 16
-          </span>
-        </div>
+        
 
         @if (errorMessage()) {
           <div class="mb-5 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2.5 animate-shake">
@@ -133,9 +121,14 @@ import { AuthService } from '../../../core/services/auth.service';
 
         <!-- Quick 1-Click Demo Credentials -->
         <div class="mt-8 pt-6 border-t border-zinc-100">
-          <p class="text-zinc-400 font-mono text-[10px] uppercase tracking-wider font-semibold text-center mb-3">
-            Acceso Rápido Demostrativo
-          </p>
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-zinc-400 font-mono text-[10px] uppercase tracking-wider font-semibold">
+              Acceso Rápido Demostrativo
+            </p>
+            <span class="text-[10px] font-mono text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">
+              Clave: <strong class="text-indigo-600 font-bold">Admin123456!</strong>
+            </span>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <button
               type="button"
@@ -161,7 +154,7 @@ import { AuthService } from '../../../core/services/auth.service';
 
             <button
               type="button"
-              (click)="fillCredentials('subadmin@wspflow.com', 'Subadmin123456!')"
+              (click)="fillCredentials('subadmin@wspflow.com', 'Admin123456!')"
               class="p-2.5 rounded-2xl bg-zinc-50 hover:bg-emerald-50/60 hover:border-emerald-200 border border-zinc-200/80 text-left transition-all active:scale-[0.98] group"
             >
               <div class="flex items-center justify-between">

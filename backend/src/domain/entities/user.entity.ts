@@ -7,6 +7,8 @@ export enum Role {
 export class UserEntity {
   id: string;
   tenantId?: string;
+  tenantSlug?: string;
+  tenantName?: string;
   email: string;
   passwordHash: string;
   fullName: string;

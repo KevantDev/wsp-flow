@@ -35,6 +35,7 @@ export class AuthService {
       fullName: user.fullName,
       role: user.role,
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -44,6 +45,8 @@ export class AuthService {
       user: {
         id: user.id,
         tenantId: user.tenantId,
+        tenantSlug: user.tenantSlug,
+        tenantName: user.tenantName,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
@@ -91,6 +94,8 @@ export class AuthService {
     return {
       id: user.id,
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug,
+      tenantName: user.tenantName,
       email: user.email,
       fullName: user.fullName,
       role: user.role,

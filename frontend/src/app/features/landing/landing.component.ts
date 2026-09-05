@@ -2,10 +2,122 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ProductsService } from '../../core/services/products.service';
-import { CartService } from '../../core/services/cart.service';
+import { TenantsService } from '../../core/services/tenants.service';
 import { ToastService } from '../../core/services/toast.service';
-import { CartDrawerComponent } from '../../shared/components/cart-drawer/cart-drawer.component';
-import { Product } from '../../core/models/models';
+import { SaaSPlan, TenantPlan } from '../../core/models/models';
+
+const DEFAULT_PLANS: SaaSPlan[] = [
+  {
+    id: 'plan-free-trial',
+    code: TenantPlan.FREE_TRIAL,
+    name: 'Free Trial',
+    description: 'Para emprendimientos que están iniciando y quieren probar el bot de WhatsApp.',
+    price: 0,
+    currency: 'PEN',
+    billingPeriod: 'MONTHLY',
+    maxProducts: 20,
+    maxBroadcasts: 50,
+    maxUsers: 1,
+    hasMercadoPago: false,
+    hasAiBot: true,
+    hasCustomThemes: false,
+    hasPdfCatalog: false,
+    features: [
+      'Bot IA Luna (Consultas básicas)',
+      'WhatsApp conectado 24/7',
+      'Hasta 20 productos en catálogo',
+      '50 difusiones / mes',
+      '1 usuario administrador',
+      'Tienda pública estándar'
+    ],
+    badgeColor: 'zinc',
+    isPopular: false,
+    isActive: true,
+  },
+  {
+    id: 'plan-basic',
+    code: TenantPlan.BASIC,
+    name: 'Basic',
+    description: 'Para negocios en crecimiento que necesitan catálogo web y pasarela de cobros.',
+    price: 49,
+    currency: 'PEN',
+    billingPeriod: 'MONTHLY',
+    maxProducts: 100,
+    maxBroadcasts: 500,
+    maxUsers: 2,
+    hasMercadoPago: true,
+    hasAiBot: true,
+    hasCustomThemes: false,
+    hasPdfCatalog: true,
+    features: [
+      'Bot IA Luna avanzado con catálogo',
+      'Pasarela Mercado Pago (Yape y tarjetas)',
+      'Hasta 100 productos en catálogo',
+      '500 difusiones CRM / mes',
+      'Catálogo PDF descargable (PDFKit)',
+      '2 operadores / subadmins'
+    ],
+    badgeColor: 'blue',
+    isPopular: false,
+    isActive: true,
+  },
+  {
+    id: 'plan-pro',
+    code: TenantPlan.PRO,
+    name: 'Pro',
+    description: 'Para marcas consolidadas que requieren personalización multitema y alto volumen.',
+    price: 99,
+    currency: 'PEN',
+    billingPeriod: 'MONTHLY',
+    maxProducts: 500,
+    maxBroadcasts: 2500,
+    maxUsers: 5,
+    hasMercadoPago: true,
+    hasAiBot: true,
+    hasCustomThemes: true,
+    hasPdfCatalog: true,
+    features: [
+      'Todo lo incluido en Basic',
+      '3 temas de tienda (Cyber Tech, Minimal, Warm)',
+      'Hasta 500 productos en catálogo',
+      '2,500 difusiones masivas / mes',
+      'Catálogo PDF automatizado',
+      '5 operadores / subadmins',
+      'Reportes de ventas avanzados'
+    ],
+    badgeColor: 'indigo',
+    isPopular: true,
+    isActive: true,
+  },
+  {
+    id: 'plan-enterprise',
+    code: TenantPlan.ENTERPRISE,
+    name: 'Enterprise',
+    description: 'Volumen corporativo con productos y difusiones ilimitadas, más soporte prioritario.',
+    price: 249,
+    currency: 'PEN',
+    billingPeriod: 'MONTHLY',
+    maxProducts: -1,
+    maxBroadcasts: -1,
+    maxUsers: -1,
+    hasMercadoPago: true,
+    hasAiBot: true,
+    hasCustomThemes: true,
+    hasPdfCatalog: true,
+    features: [
+      'Todo lo incluido en Pro',
+      'Productos en catálogo ILIMITADOS',
+      'Difusiones masivas CRM ILIMITADAS',
+      'Operadores y subadmins ILIMITADOS',
+      'Pasarela Mercado Pago & 3 Temas',
+      'Catálogo PDF ilimitado',
+      'Soporte prioritario 24/7 y SLA'
+    ],
+    badgeColor: 'amber',
+    isPopular: false,
+    isActive: true,
+  }
+];
 
 interface ChatSimulationMessage {
   sender: 'user' | 'bot';
@@ -22,7 +134,7 @@ interface ChatSimulationMessage {
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [CommonModule, RouterModule, CartDrawerComponent],
+  imports: [CommonModule, RouterModule],
   template: `
     <div class="min-h-[100dvh] bg-[#F8F9FA] text-zinc-900 font-sans selection:bg-indigo-600 selection:text-white relative overflow-x-hidden">
       
@@ -52,49 +164,24 @@ interface ChatSimulationMessage {
             <a href="#beneficios" class="hover:text-indigo-600 transition-colors">Ventajas</a>
             <a href="#simulador" class="hover:text-indigo-600 transition-colors">Simulador IA</a>
             <a href="#como-funciona" class="hover:text-indigo-600 transition-colors">Cómo Funciona</a>
-            <a href="#catalogo" class="hover:text-indigo-600 transition-colors">Catálogo</a>
-            <a href="#precios" class="hover:text-indigo-600 transition-colors">Planes</a>
+            <a href="#precios" class="hover:text-indigo-600 transition-colors">Planes y Precios</a>
             <a href="#faq" class="hover:text-indigo-600 transition-colors">Preguntas</a>
           </nav>
 
           <!-- Right Action Buttons -->
-          <div class="flex items-center gap-2.5 sm:gap-3">
-            <button
-              (click)="downloadCatalogPdf()"
-              [disabled]="isDownloadingPdf()"
-              class="hidden sm:inline-flex btn-secondary text-xs py-2 px-3.5"
-              title="Descargar Catálogo de Productos en PDF"
-            >
-              @if (isDownloadingPdf()) {
-                <span class="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                <span>Generando...</span>
-              } @else {
-                <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Catálogo PDF</span>
-              }
-            </button>
-
-            <button
-              (click)="cartService.open()"
-              class="btn-secondary text-xs py-2 px-3 relative flex items-center gap-1.5 font-bold"
-              title="Ver Carrito de Compras"
-            >
-              <span>🛒</span>
-              <span class="hidden sm:inline">Carrito</span>
-              @if (cartService.itemCount() > 0) {
-                <span class="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-bold">
-                  {{ cartService.itemCount() }}
-                </span>
-              }
-            </button>
-
+          <div class="flex items-center gap-2 sm:gap-3">
             <a
               routerLink="/login"
-              class="btn-primary text-xs sm:text-sm py-2 sm:py-2.5 px-4 sm:px-5"
+              class="text-xs font-bold text-zinc-700 hover:text-indigo-600 transition-colors px-2.5 py-2"
             >
-              <span>Acceder al Panel</span>
+              Iniciar Sesión
+            </a>
+
+            <a
+              routerLink="/register-store"
+              class="btn-primary text-xs sm:text-sm py-2 sm:py-2.5 px-4 sm:px-5 flex items-center gap-1.5 shadow-sm"
+            >
+              <span>Crear Tienda Gratis</span>
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
@@ -109,12 +196,6 @@ interface ChatSimulationMessage {
         
         <!-- Max 4 Text Elements in Stack -->
         <div class="text-center max-w-3xl mx-auto space-y-4">
-          
-          <!-- Element 1: Announcement Pill -->
-          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-zinc-200/90 shadow-sm text-xs font-semibold text-zinc-700">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Motor OpenAI GPT-5.6-luna con Function Calling</span>
-          </div>
 
           <!-- Element 2: Headline (Max 2 Lines Desktop) -->
           <h1 class="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-zinc-900 tracking-tight leading-[1.12]">
@@ -178,7 +259,7 @@ interface ChatSimulationMessage {
               <!-- Customer -->
               <div class="flex justify-end">
                 <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-sm p-3 max-w-[85%] sm:max-w-[75%] shadow-sm">
-                  <p class="font-medium">¡Hola! ¿Tienen catálogo con fotos y precios de auriculares?</p>
+                  <p class="font-medium text-white">¡Hola! ¿Tienen catálogo con fotos y precios de auriculares?</p>
                   <span class="text-[9px] text-indigo-200 block text-right mt-1 font-mono">10:42 AM</span>
                 </div>
               </div>
@@ -206,7 +287,7 @@ interface ChatSimulationMessage {
               <!-- Customer Order -->
               <div class="flex justify-end">
                 <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-sm p-3 max-w-[85%] sm:max-w-[75%] shadow-sm">
-                  <p class="font-medium">Quiero ordenar 2 unidades de los Auriculares Pro (SKU: PROD-102).</p>
+                  <p class="font-medium text-white">Quiero ordenar 2 unidades de los Auriculares Pro (SKU: PROD-102).</p>
                   <span class="text-[9px] text-indigo-200 block text-right mt-1 font-mono">10:43 AM</span>
                 </div>
               </div>
@@ -360,7 +441,7 @@ interface ChatSimulationMessage {
                   </div>
                   <div>
                     <h4 class="font-bold text-zinc-900 text-xs">Luna — Asistente WSP Flow</h4>
-                    <span class="text-[10px] text-emerald-700 font-mono">Modo GPT-5.6 Activo</span>
+                    <span class="text-[10px] text-emerald-700 font-mono">Modo IA - GPT-5.6 Activo</span>
                   </div>
                 </div>
                 <button
@@ -385,7 +466,7 @@ interface ChatSimulationMessage {
                       </div>
 
                       <!-- Text -->
-                      <p class="leading-relaxed whitespace-pre-line">{{ msg.text }}</p>
+                      <p class="leading-relaxed whitespace-pre-line ">{{ msg.text }}</p>
 
                       <!-- Optional PDF Widget -->
                       @if (msg.isPdf) {
@@ -608,155 +689,133 @@ interface ChatSimulationMessage {
         </div>
       </section>
 
-      <!-- ================= PUBLIC LIVE CATALOG SHOWCASE ================= -->
-      <section id="catalogo" class="py-14 sm:py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-          <div>
-            <h2 class="text-2xl sm:text-4xl font-extrabold text-zinc-900 tracking-tight">
-              Productos Destacados en Vivo
-            </h2>
-            <p class="text-zinc-500 text-sm mt-1">Conectado a la base de datos PostgreSQL en tiempo real.</p>
-          </div>
-
-          <button (click)="downloadCatalogPdf()" [disabled]="isDownloadingPdf()" class="btn-primary text-xs py-2.5 px-4 self-start md:self-auto">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>Descargar Catálogo Completo (PDF)</span>
-          </button>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          @for (product of publicProducts(); track product.id) {
-            <div class="bg-white rounded-3xl border border-zinc-200/90 p-4 shadow-sm hover:shadow-xs hover:border-zinc-300 transition-all flex flex-col justify-between group">
-              <div>
-                <div class="relative h-40 rounded-2xl overflow-hidden bg-zinc-100 mb-3 border border-zinc-200/70">
-                  <img
-                    [src]="product.images?.[0]?.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&auto=format&fit=crop&q=80'"
-                    [alt]="product.name"
-                    class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                  />
-                  <span class="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-white/95 text-[10px] font-mono font-bold text-zinc-800 border border-zinc-200">
-                    {{ product.sku }}
-                  </span>
-                </div>
-
-                <span class="text-zinc-500 font-mono text-[10px] uppercase font-semibold block">
-                  {{ product.categoryName || 'General' }}
-                </span>
-                <h4 class="font-bold text-zinc-900 text-sm line-clamp-1 mt-0.5 group-hover:text-indigo-600 transition-colors">
-                  {{ product.name }}
-                </h4>
-                <p class="text-xs text-zinc-500 line-clamp-2 mt-1 leading-relaxed">
-                  {{ product.description }}
-                </p>
-              </div>
-
-              <div class="mt-3.5 pt-3 border-t border-zinc-100 flex items-center justify-between gap-2">
-                <span class="text-base font-extrabold text-zinc-900 font-mono">S/ {{ product.price | number: '1.2-2' }}</span>
-                
-                <div class="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    (click)="cartService.addItem(product, 1)"
-                    class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl border border-indigo-200 flex items-center gap-1 transition-colors active:scale-[0.98]"
-                    title="Añadir al Carrito"
-                  >
-                    <span>+ 🛒</span>
-                    <span class="hidden sm:inline">Añadir</span>
-                  </button>
-
-                  <a
-                    [href]="'https://wa.me/?text=Hola!%20Quiero%20ordenar%20el%20producto%20' + product.name + '%20(SKU:%20' + product.sku + ')'"
-                    target="_blank"
-                    class="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 p-1.5 rounded-xl border border-emerald-200 flex items-center justify-center transition-colors active:scale-[0.98]"
-                    title="Pedir por WhatsApp"
-                  >
-                    <span>💬</span>
-                  </a>
-                </div>
-              </div>
-            </div>
-          }
-        </div>
-
-      </section>
-
       <!-- ================= PRICING SECTION ================= -->
       <section id="precios" class="py-14 sm:py-20 bg-white border-y border-zinc-200/80">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div class="text-center max-w-2xl mx-auto mb-12">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold mb-3">
+              <span>⚡ Planes Oficiales de Suscripción</span>
+            </div>
             <h2 class="text-2xl sm:text-4xl font-extrabold text-zinc-900 tracking-tight">
               Precios transparentes
             </h2>
-            <p class="text-zinc-500 text-sm mt-1">Conecta tu WhatsApp y vende sin límites en Soles.</p>
+            <p class="text-zinc-500 text-sm mt-1">Conecta tu WhatsApp y vende sin límites en Soles (PEN) con control de stock y pasarela.</p>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
-            
-            <!-- Plan 1 -->
-            <div class="bg-zinc-50/80 rounded-3xl border border-zinc-200/90 p-6 sm:p-7 flex flex-col justify-between">
-              <div>
-                <h3 class="font-bold text-zinc-900 text-lg">Starter</h3>
-                <p class="text-xs text-zinc-500 mt-1">Para emprendedores y tiendas iniciales</p>
-                <div class="my-4">
-                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">S/ 99</span>
-                  <span class="text-xs text-zinc-500 font-medium"> / mes</span>
-                </div>
-                <ul class="space-y-2.5 text-xs text-zinc-600">
-                  <li class="flex items-center gap-2">✓ 1 Línea de WhatsApp Baileys</li>
-                  <li class="flex items-center gap-2">✓ Hasta 100 productos en catálogo</li>
-                  <li class="flex items-center gap-2">✓ Catálogo en PDF descargable</li>
-                  <li class="flex items-center gap-2">✓ Respuestas automáticas con reglas</li>
-                </ul>
-              </div>
-              <a routerLink="/login" class="btn-secondary w-full text-xs mt-6">Elegir Starter</a>
-            </div>
+          <!-- 4-Card Responsive Grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
+            @for (p of plans(); track p.code) {
+              <div
+                [class]="p.code === 'PRO'
+                  ? 'bg-white rounded-3xl border-2 border-indigo-600 p-6 sm:p-7 shadow-xl shadow-indigo-600/10 flex flex-col justify-between relative ring-4 ring-indigo-50/80 order-first lg:order-none'
+                  : 'bg-zinc-50/90 rounded-3xl border border-zinc-200/90 p-6 sm:p-7 flex flex-col justify-between hover:border-zinc-300 transition-all hover:bg-white'"
+              >
+                <!-- Popular Badge for PRO -->
+                @if (p.code === 'PRO') {
+                  <span class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-extrabold uppercase tracking-wider shadow-sm">
+                    Más Popular • Con IA
+                  </span>
+                }
 
-            <!-- Plan 2 (Featured) -->
-            <div class="bg-white rounded-3xl border-2 border-indigo-600 p-6 sm:p-7 shadow-lg shadow-indigo-600/5 flex flex-col justify-between relative">
-              <span class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-bold uppercase tracking-wider shadow-sm">
-                Más Popular • Con IA
-              </span>
-              <div>
-                <h3 class="font-bold text-zinc-900 text-lg">Business IA</h3>
-                <p class="text-xs text-zinc-500 mt-1">Para negocios con ventas activas y stock</p>
-                <div class="my-4">
-                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">S/ 199</span>
-                  <span class="text-xs text-zinc-500 font-medium"> / mes</span>
-                </div>
-                <ul class="space-y-2.5 text-xs text-zinc-700 font-medium">
-                  <li class="flex items-center gap-2">✓ <strong>Asistente OpenAI GPT-5.6-luna</strong></li>
-                  <li class="flex items-center gap-2">✓ Function Calling & Creación de Órdenes</li>
-                  <li class="flex items-center gap-2">✓ Catálogo PDF con envío automático</li>
-                  <li class="flex items-center gap-2">✓ Tablero To-Do Kanban de Pedidos</li>
-                  <li class="flex items-center gap-2">✓ Hasta 3 Subadministradores</li>
-                </ul>
-              </div>
-              <a routerLink="/login" class="btn-primary w-full text-xs mt-6">Probar Business IA</a>
-            </div>
+                <div>
+                  <div class="flex items-center justify-between gap-2">
+                    <h3 class="font-extrabold text-zinc-900 text-lg sm:text-xl">{{ p.name }}</h3>
+                    <span
+                      [class]="p.code === 'PRO' ? 'bg-indigo-100 text-indigo-700' : p.code === 'ENTERPRISE' ? 'bg-amber-100 text-amber-800' : p.code === 'BASIC' ? 'bg-blue-100 text-blue-700' : 'bg-zinc-200/80 text-zinc-700'"
+                      class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md uppercase"
+                    >
+                      {{ p.code }}
+                    </span>
+                  </div>
 
-            <!-- Plan 3 -->
-            <div class="bg-zinc-50/80 rounded-3xl border border-zinc-200/90 p-6 sm:p-7 flex flex-col justify-between">
-              <div>
-                <h3 class="font-bold text-zinc-900 text-lg">Enterprise</h3>
-                <p class="text-xs text-zinc-500 mt-1">Para distribuidoras y cadenas multi-sucursal</p>
-                <div class="my-4">
-                  <span class="text-3xl font-extrabold text-zinc-900 font-mono">S/ 399</span>
-                  <span class="text-xs text-zinc-500 font-medium"> / mes</span>
-                </div>
-                <ul class="space-y-2.5 text-xs text-zinc-600">
-                  <li class="flex items-center gap-2">✓ Todo lo de Business IA</li>
-                  <li class="flex items-center gap-2">✓ Subadministradores ilimitados</li>
-                  <li class="flex items-center gap-2">✓ Múltiples líneas simultáneas</li>
-                  <li class="flex items-center gap-2">✓ Soporte prioritario 24/7</li>
-                </ul>
-              </div>
-              <a routerLink="/login" class="btn-secondary w-full text-xs mt-6">Contactar Ventas</a>
-            </div>
+                  <p class="text-xs text-zinc-500 mt-1 line-clamp-2 min-h-[32px]">
+                    {{ p.description || 'Plataforma de comercio conversacional y bot de WhatsApp.' }}
+                  </p>
 
+                  <div class="my-4 pb-4 border-b border-zinc-200/70">
+                    <div class="flex items-baseline gap-1">
+                      <span class="text-3xl sm:text-4xl font-black text-zinc-900 font-mono">
+                        S/ {{ p.price }}
+                      </span>
+                      <span class="text-xs text-zinc-500 font-medium"> / mes</span>
+                    </div>
+                    <span class="text-[10px] text-zinc-400 font-mono">Facturación mensual en PEN</span>
+                  </div>
+
+                  <ul class="space-y-2.5 text-xs text-zinc-700 mb-6">
+                    <!-- Products Quota -->
+                    <li class="flex items-start gap-2">
+                      <span class="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                      <span>
+                        <strong>{{ p.maxProducts === -1 ? 'Productos ILIMITADOS' : 'Hasta ' + p.maxProducts + ' productos' }}</strong>
+                      </span>
+                    </li>
+
+                    <!-- Broadcasts Quota -->
+                    <li class="flex items-start gap-2">
+                      <span class="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                      <span>{{ p.maxBroadcasts === -1 ? 'Difusiones CRM ILIMITADAS' : (p.maxBroadcasts | number) + ' difusiones / mes' }}</span>
+                    </li>
+
+                    <!-- Operators Quota -->
+                    <li class="flex items-start gap-2">
+                      <span class="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                      <span>{{ p.maxUsers === -1 ? 'Operadores ILIMITADOS' : p.maxUsers + (p.maxUsers === 1 ? ' operador' : ' operadores') }}</span>
+                    </li>
+
+                    <!-- Mercado Pago -->
+                    <li class="flex items-start gap-2">
+                      @if (p.hasMercadoPago) {
+                        <span class="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                        <span class="font-semibold text-emerald-800">Mercado Pago (Yape y Tarjetas)</span>
+                      } @else {
+                        <span class="text-zinc-400 font-bold shrink-0 mt-0.5">✕</span>
+                        <span class="text-zinc-400 line-through">Sin Mercado Pago</span>
+                      }
+                    </li>
+
+                    <!-- Custom Themes -->
+                    <li class="flex items-start gap-2">
+                      @if (p.hasCustomThemes) {
+                        <span class="text-indigo-600 font-bold shrink-0 mt-0.5">✓</span>
+                        <span class="font-semibold text-indigo-900">3 Temas (Cyber Tech, Minimal, Warm)</span>
+                      } @else {
+                        <span class="text-zinc-500 shrink-0 mt-0.5">•</span>
+                        <span class="text-zinc-500">Plantilla Estándar de Tienda</span>
+                      }
+                    </li>
+
+                    <!-- PDF Catalog -->
+                    <li class="flex items-start gap-2">
+                      @if (p.hasPdfCatalog) {
+                        <span class="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                        <span>Catálogo PDF descargable (PDFKit)</span>
+                      } @else {
+                        <span class="text-zinc-400 font-bold shrink-0 mt-0.5">✕</span>
+                        <span class="text-zinc-400 line-through">Catálogo en PDF</span>
+                      }
+                    </li>
+
+                    <!-- WhatsApp Baileys -->
+                    <li class="flex items-start gap-2">
+                      <span class="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                      <span>Socket WhatsApp Baileys 24/7</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <a
+                  [routerLink]="['/register-store']"
+                  [queryParams]="{ plan: p.code }"
+                  [class]="p.code === 'PRO'
+                    ? 'btn-primary w-full text-xs font-bold py-2.5 shadow-md justify-center'
+                    : 'btn-secondary w-full text-xs font-bold py-2.5 justify-center'"
+                >
+                  {{ p.code === 'FREE_TRIAL' ? 'Empezar Prueba Gratis' : p.code === 'PRO' ? 'Elegir Plan Pro' : 'Elegir ' + p.name }}
+                </a>
+              </div>
+            }
           </div>
 
         </div>
@@ -819,46 +878,22 @@ interface ChatSimulationMessage {
           <div class="flex items-center gap-5 text-xs text-zinc-500 font-medium">
             <a href="#beneficios" class="hover:text-zinc-900">Ventajas</a>
             <a href="#simulador" class="hover:text-zinc-900">Simulador</a>
-            <a href="#catalogo" class="hover:text-zinc-900">Catálogo</a>
+            <a href="#como-funciona" class="hover:text-zinc-900">Cómo Funciona</a>
             <a href="#precios" class="hover:text-zinc-900">Planes</a>
             <a routerLink="/login" class="hover:text-zinc-900 font-bold text-indigo-600">Acceso Panel</a>
           </div>
         </div>
       </footer>
 
-      <!-- ================= FLOATING CART CTA BUTTON ================= -->
-      @if (cartService.itemCount() > 0) {
-        <div class="fixed bottom-6 right-6 z-40 animate-fade-in">
-          <button
-            (click)="cartService.open()"
-            class="flex items-center gap-3 py-3 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-600/30 border border-indigo-500 hover:scale-105 active:scale-95 transition-all"
-          >
-            <span class="text-xl">🛒</span>
-            <div class="text-left">
-              <span class="block text-[10px] uppercase tracking-wider text-indigo-200 font-mono font-semibold">
-                {{ cartService.itemCount() }} {{ cartService.itemCount() === 1 ? 'producto' : 'productos' }}
-              </span>
-              <span class="block font-mono font-extrabold text-sm">
-                S/ {{ cartService.subtotal() | number: '1.2-2' }}
-              </span>
-            </div>
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse ml-1"></span>
-          </button>
-        </div>
-      }
-
-      <!-- App Cart Drawer Slide-over -->
-      <app-cart-drawer></app-cart-drawer>
-
     </div>
   `,
 })
 export class LandingComponent implements OnInit {
   private productsService = inject(ProductsService);
+  private tenantsService = inject(TenantsService);
   private toast = inject(ToastService);
-  cartService = inject(CartService);
 
-  publicProducts = signal<Product[]>([]);
+  plans = signal<SaaSPlan[]>(DEFAULT_PLANS);
   isDownloadingPdf = signal(false);
   isSimulatingTyping = signal(false);
 
@@ -895,8 +930,15 @@ export class LandingComponent implements OnInit {
   ]);
 
   ngOnInit() {
-    this.productsService.getProducts().subscribe({
-      next: (prods) => this.publicProducts.set(prods.slice(0, 4)),
+    this.tenantsService.getPublicPlans().subscribe({
+      next: (dbPlans) => {
+        if (dbPlans && dbPlans.length > 0) {
+          this.plans.set(dbPlans);
+        }
+      },
+      error: () => {
+        // DEFAULT_PLANS ya está asignado como fallback
+      },
     });
   }
 

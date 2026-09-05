@@ -108,10 +108,18 @@ import {
               <div class="text-2xl sm:text-3xl font-extrabold text-zinc-900 tracking-tight">
                 {{ m.totalTenants }}
               </div>
-              <p class="text-[11px] text-zinc-500 mt-1 flex items-center gap-2">
+              <p class="text-[11px] text-zinc-500 mt-1 flex items-center gap-1.5 flex-wrap">
                 <span class="text-emerald-600 font-bold">{{ m.activeTenants }} activas</span>
                 <span>•</span>
                 <span class="text-amber-600 font-bold">{{ m.trialTenants }} trial</span>
+                @if (m.planDistribution.basic) {
+                  <span>•</span>
+                  <span class="text-sky-600 font-bold">{{ m.planDistribution.basic }} basic</span>
+                }
+                @if (m.planDistribution.pro) {
+                  <span>•</span>
+                  <span class="text-indigo-600 font-bold">{{ m.planDistribution.pro }} pro</span>
+                }
               </p>
             </div>
           </app-bento-card>
@@ -152,7 +160,7 @@ import {
           </svg>
         </div>
 
-        <!-- Filter Pills: Plan -->
+        <!-- Filter Pills: Plan (Los 4 planes de PROJECT_SPECIFICATION.md) -->
         <div class="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
           <button
             type="button"
@@ -166,21 +174,28 @@ import {
             (click)="selectedPlanFilter.set('FREE_TRIAL')"
             [class]="selectedPlanFilter() === 'FREE_TRIAL' ? 'px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold text-xs shadow-xs' : 'px-3 py-1.5 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 text-xs font-semibold'"
           >
-            Free Trial
+            Free Trial (S/ 0)
+          </button>
+          <button
+            type="button"
+            (click)="selectedPlanFilter.set('BASIC')"
+            [class]="selectedPlanFilter() === 'BASIC' ? 'px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold text-xs shadow-xs' : 'px-3 py-1.5 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 text-xs font-semibold'"
+          >
+            Plan Basic (S/ 49)
           </button>
           <button
             type="button"
             (click)="selectedPlanFilter.set('PRO')"
-            [class]="selectedPlanFilter() === 'PRO' ? 'px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-xs' : 'px-3 py-1.5 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 text-xs font-semibold'"
+            [class]="selectedPlanFilter() === 'PRO' ? 'px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-xs' : 'px-3 py-1.5 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 text-xs font-semibold'"
           >
-            Plan PRO
+            Plan PRO (S/ 99)
           </button>
           <button
             type="button"
             (click)="selectedPlanFilter.set('ENTERPRISE')"
             [class]="selectedPlanFilter() === 'ENTERPRISE' ? 'px-3 py-1.5 rounded-xl bg-purple-600 text-white font-bold text-xs shadow-xs' : 'px-3 py-1.5 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 text-xs font-semibold'"
           >
-            Enterprise
+            Enterprise (S/ 249)
           </button>
         </div>
       </div>
@@ -214,7 +229,7 @@ import {
                 <!-- Plan & Status Badges -->
                 <div class="flex flex-col items-end gap-1.5">
                   <app-badge [variant]="getPlanBadgeVariant(tenant.plan)">
-                    {{ tenant.plan }}
+                    {{ getPlanLabel(tenant.plan) }}
                   </app-badge>
 
                   <span
@@ -255,7 +270,7 @@ import {
                   <span class="block text-[10px] text-zinc-500 font-mono uppercase">Productos</span>
                   <span class="font-extrabold text-zinc-900 text-sm">
                     {{ tenant.metrics.productCount }}
-                    <span class="text-zinc-400 font-normal text-xs">/ {{ tenant.metrics.maxProducts }}</span>
+                    <span class="text-zinc-400 font-normal text-xs">/ {{ tenant.metrics.maxProducts === -1 ? '∞' : tenant.metrics.maxProducts }}</span>
                   </span>
                 </div>
 
@@ -270,6 +285,28 @@ import {
                     S/ {{ tenant.metrics.totalGmv | number: '1.2-2' }}
                   </span>
                 </div>
+              </div>
+
+              <!-- Plan Capabilities Chips -->
+              <div class="pt-2 pb-1 border-t border-zinc-100 flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                <span
+                  [class]="tenant.plan !== TenantPlan.FREE_TRIAL ? 'px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/70 font-semibold' : 'px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-400 line-through'"
+                >
+                  💳 Mercado Pago
+                </span>
+                <span
+                  [class]="(tenant.plan === TenantPlan.PRO || tenant.plan === TenantPlan.ENTERPRISE) ? 'px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/70 font-semibold' : 'px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-400 line-through'"
+                >
+                  🎨 3 Temas Web
+                </span>
+                <span
+                  [class]="tenant.plan !== TenantPlan.FREE_TRIAL ? 'px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200/70 font-semibold' : 'px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-400 line-through'"
+                >
+                  📄 Catálogo PDF
+                </span>
+                <span class="ml-auto text-zinc-500 font-semibold">
+                  👥 {{ tenant.metrics.maxUsers === -1 ? 'Operadores ∞' : ((tenant.metrics.maxUsers || 1) + ' ' + (tenant.metrics.maxUsers === 1 ? 'operador' : 'operadores')) }}
+                </span>
               </div>
             </div>
 
@@ -333,30 +370,60 @@ import {
           </div>
 
           <div class="space-y-4">
-            <!-- Plan Picker -->
+            <!-- Plan Picker (Bento Grid con los 4 planes oficiales de PROJECT_SPECIFICATION.md) -->
             <div>
-              <label class="block text-xs font-mono uppercase tracking-wider text-zinc-500 font-bold mb-2">Plan Suscripción</label>
-              <div class="grid grid-cols-3 gap-2">
+              <label class="block text-xs font-mono uppercase tracking-wider text-zinc-500 font-bold mb-2">Plan de Suscripción SaaS</label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <!-- FREE_TRIAL -->
                 <button
                   type="button"
-                  (click)="setTempPlan('FREE_TRIAL')"
-                  [class]="tempPlan === 'FREE_TRIAL' ? 'p-2.5 rounded-xl border-2 border-emerald-500 bg-emerald-50 text-emerald-800 text-xs font-bold' : 'p-2.5 rounded-xl border border-zinc-200 text-zinc-600 text-xs font-semibold'"
+                  (click)="setTempPlan(TenantPlan.FREE_TRIAL)"
+                  [class]="tempPlan === TenantPlan.FREE_TRIAL ? 'p-3 rounded-2xl border-2 border-amber-500 bg-amber-50/80 text-left transition-all shadow-xs' : 'p-3 rounded-2xl border border-zinc-200 hover:border-zinc-300 text-left transition-all'"
                 >
-                  Free Trial
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-900">🎁 Free Trial</span>
+                    <span class="text-[10px] font-mono font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">S/ 0</span>
+                  </div>
+                  <p class="text-[10px] text-zinc-500 mt-1">20 prods • 50 difusiones • 1 admin</p>
                 </button>
+
+                <!-- BASIC -->
                 <button
                   type="button"
-                  (click)="setTempPlan('PRO')"
-                  [class]="tempPlan === 'PRO' ? 'p-2.5 rounded-xl border-2 border-indigo-500 bg-indigo-50 text-indigo-800 text-xs font-bold' : 'p-2.5 rounded-xl border border-zinc-200 text-zinc-600 text-xs font-semibold'"
+                  (click)="setTempPlan(TenantPlan.BASIC)"
+                  [class]="tempPlan === TenantPlan.BASIC ? 'p-3 rounded-2xl border-2 border-sky-500 bg-sky-50/80 text-left transition-all shadow-xs' : 'p-3 rounded-2xl border border-zinc-200 hover:border-zinc-300 text-left transition-all'"
                 >
-                  Plan PRO
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-900">⚡ Plan Basic</span>
+                    <span class="text-[10px] font-mono font-bold text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded">S/ 49/m</span>
+                  </div>
+                  <p class="text-[10px] text-zinc-500 mt-1">100 prods • 500 difusiones • MP • PDF</p>
                 </button>
+
+                <!-- PRO -->
                 <button
                   type="button"
-                  (click)="setTempPlan('ENTERPRISE')"
-                  [class]="tempPlan === 'ENTERPRISE' ? 'p-2.5 rounded-xl border-2 border-purple-500 bg-purple-50 text-purple-800 text-xs font-bold' : 'p-2.5 rounded-xl border border-zinc-200 text-zinc-600 text-xs font-semibold'"
+                  (click)="setTempPlan(TenantPlan.PRO)"
+                  [class]="tempPlan === TenantPlan.PRO ? 'p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-50/80 text-left transition-all shadow-xs' : 'p-3 rounded-2xl border border-zinc-200 hover:border-zinc-300 text-left transition-all'"
                 >
-                  Enterprise
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-900">🚀 Plan PRO</span>
+                    <span class="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">S/ 99/m</span>
+                  </div>
+                  <p class="text-[10px] text-zinc-500 mt-1">500 prods • 2.5k difusiones • 3 Temas</p>
+                </button>
+
+                <!-- ENTERPRISE -->
+                <button
+                  type="button"
+                  (click)="setTempPlan(TenantPlan.ENTERPRISE)"
+                  [class]="tempPlan === TenantPlan.ENTERPRISE ? 'p-3 rounded-2xl border-2 border-purple-500 bg-purple-50/80 text-left transition-all shadow-xs' : 'p-3 rounded-2xl border border-zinc-200 hover:border-zinc-300 text-left transition-all'"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-900">👑 Enterprise</span>
+                    <span class="text-[10px] font-mono font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">S/ 249/m</span>
+                  </div>
+                  <p class="text-[10px] text-zinc-500 mt-1">Ilimitado (-1) • Todos los módulos</p>
                 </button>
               </div>
             </div>
@@ -482,11 +549,12 @@ import {
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-zinc-700 mb-1">Plan Inicial</label>
+              <label class="block text-xs font-bold text-zinc-700 mb-1">Plan Inicial Asignado</label>
               <select [(ngModel)]="newPlan" name="newPlan" class="input-bento text-xs py-2.5">
-                <option value="FREE_TRIAL">Prueba Gratis (14 días)</option>
-                <option value="PRO">Plan PRO (Hasta 100 prods - S/ 79/mes)</option>
-                <option value="ENTERPRISE">Plan Enterprise (Ilimitado - S/ 149/mes)</option>
+                <option [value]="TenantPlan.FREE_TRIAL">🎁 Free Trial — S/ 0/mes (20 prods, 50 difusiones, 1 admin)</option>
+                <option [value]="TenantPlan.BASIC">⚡ Plan Basic — S/ 49/mes (100 prods, 500 difusiones, Mercado Pago, PDFKit)</option>
+                <option [value]="TenantPlan.PRO">🚀 Plan PRO — S/ 99/mes (500 prods, 2,500 difusiones, 3 temas multitema)</option>
+                <option [value]="TenantPlan.ENTERPRISE">👑 Plan Enterprise — S/ 249/mes (Ilimitado -1, todos los módulos)</option>
               </select>
             </div>
 
@@ -513,6 +581,9 @@ import {
   `,
 })
 export class TenantsManagementComponent implements OnInit {
+  TenantPlan = TenantPlan;
+  TenantStatus = TenantStatus;
+
   private tenantsService = inject(TenantsService);
   private authService = inject(AuthService);
   private toast = inject(ToastService);
@@ -522,7 +593,7 @@ export class TenantsManagementComponent implements OnInit {
   loading = signal(true);
 
   searchQuery = '';
-  selectedPlanFilter = signal<'ALL' | 'FREE_TRIAL' | 'PRO' | 'ENTERPRISE'>('ALL');
+  selectedPlanFilter = signal<'ALL' | 'FREE_TRIAL' | 'BASIC' | 'PRO' | 'ENTERPRISE'>('ALL');
 
   // Modal: Editar
   editingTenant = signal<EnrichedTenant | null>(null);
@@ -530,8 +601,8 @@ export class TenantsManagementComponent implements OnInit {
   tempStatus: TenantStatus = TenantStatus.ACTIVE;
   savingChanges = signal(false);
 
-  setTempPlan(plan: 'FREE_TRIAL' | 'PRO' | 'ENTERPRISE') {
-    this.tempPlan = plan as TenantPlan;
+  setTempPlan(plan: TenantPlan) {
+    this.tempPlan = plan;
   }
 
   // Modal: Crear
@@ -542,7 +613,7 @@ export class TenantsManagementComponent implements OnInit {
   newEmail = '';
   newPassword = '';
   newPhone = '';
-  newPlan: TenantPlan = TenantPlan.PRO;
+  newPlan: TenantPlan = TenantPlan.FREE_TRIAL;
   creatingStore = signal(false);
 
   ngOnInit() {
@@ -585,16 +656,33 @@ export class TenantsManagementComponent implements OnInit {
     return list;
   });
 
-  getPlanBadgeVariant(plan: TenantPlan): 'info' | 'purple' | 'success' | 'warning' {
+  getPlanBadgeVariant(plan: TenantPlan): 'info' | 'purple' | 'success' | 'warning' | 'neutral' {
     switch (plan) {
       case TenantPlan.ENTERPRISE:
         return 'purple';
       case TenantPlan.PRO:
+        return 'success';
+      case TenantPlan.BASIC:
         return 'info';
       case TenantPlan.FREE_TRIAL:
         return 'warning';
       default:
-        return 'info';
+        return 'neutral';
+    }
+  }
+
+  getPlanLabel(plan: TenantPlan): string {
+    switch (plan) {
+      case TenantPlan.ENTERPRISE:
+        return 'Enterprise (S/ 249)';
+      case TenantPlan.PRO:
+        return 'Plan PRO (S/ 99)';
+      case TenantPlan.BASIC:
+        return 'Plan Basic (S/ 49)';
+      case TenantPlan.FREE_TRIAL:
+        return 'Free Trial (S/ 0)';
+      default:
+        return plan;
     }
   }
 
@@ -610,7 +698,7 @@ export class TenantsManagementComponent implements OnInit {
     this.tenantsService.impersonateTenant(tenant.id).subscribe({
       next: (res) => {
         this.toast.success(`Accediendo al portal de "${tenant.name}"...`);
-        this.authService.applyImpersonation(res.impersonationToken, tenant.name);
+        this.authService.applyImpersonation(res.impersonationToken, tenant.name, tenant.slug);
       },
       error: (err) => {
         this.toast.error(err.error?.message || 'Error al suplantar identidad de la tienda');
@@ -713,6 +801,6 @@ export class TenantsManagementComponent implements OnInit {
     this.newEmail = '';
     this.newPassword = '';
     this.newPhone = '';
-    this.newPlan = TenantPlan.PRO;
+    this.newPlan = TenantPlan.FREE_TRIAL;
   }
 }

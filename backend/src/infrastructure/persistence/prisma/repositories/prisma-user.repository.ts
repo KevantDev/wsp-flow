@@ -8,20 +8,30 @@ export class PrismaUserRepository implements IUserRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findById(id: string): Promise<UserEntity | null> {
-    const user = await this.prisma.user.findUnique({ where: { id } });
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { tenant: { select: { slug: true, name: true } } },
+    });
     if (!user) return null;
     return new UserEntity({
       ...user,
       role: user.role as Role,
+      tenantSlug: user.tenant?.slug,
+      tenantName: user.tenant?.name,
     });
   }
 
   async findByEmail(email: string): Promise<UserEntity | null> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { tenant: { select: { slug: true, name: true } } },
+    });
     if (!user) return null;
     return new UserEntity({
       ...user,
       role: user.role as Role,
+      tenantSlug: user.tenant?.slug,
+      tenantName: user.tenant?.name,
     });
   }
 

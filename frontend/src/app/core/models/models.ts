@@ -102,9 +102,11 @@ export interface EnrichedTenant {
   metrics: {
     productCount: number;
     maxProducts: number;
+    maxBroadcasts?: number;
+    maxUsers?: number;
+    userCount: number;
     orderCount: number;
     chatCount: number;
-    userCount: number;
     totalGmv: number;
   };
   whatsapp: {
@@ -121,6 +123,7 @@ export interface AdminMetrics {
   suspendedTenants: number;
   planDistribution: {
     freeTrial: number;
+    basic?: number;
     pro: number;
     enterprise: number;
   };
@@ -141,6 +144,8 @@ export interface AdminMetrics {
 export interface User {
   id: string;
   tenantId?: string;
+  tenantSlug?: string;
+  tenantName?: string;
   email: string;
   fullName: string;
   phoneNumber?: string;
@@ -158,11 +163,17 @@ export interface AuthResponse {
 export interface RegisterStoreDto {
   storeName: string;
   slug?: string;
-  ownerName: string;
-  email: string;
-  password: string;
+  storeSlug?: string;
+  ownerName?: string;
+  adminFullName?: string;
+  email?: string;
+  adminEmail?: string;
+  password?: string;
+  adminPassword?: string;
   phoneNumber?: string;
   plan?: TenantPlan;
+  businessCategory?: string;
+  businessDescription?: string;
 }
 
 export interface Category {

@@ -7,22 +7,40 @@ export class RegisterStoreDto {
   storeName: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'El slug de la tienda es obligatorio' })
+  @IsOptional()
   @Matches(/^[a-z0-9-]+$/, { message: 'El slug solo puede contener letras minúsculas, números y guiones' })
-  storeSlug: string;
+  storeSlug?: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'El nombre del administrador es obligatorio' })
-  adminFullName: string;
+  @IsOptional()
+  @Matches(/^[a-z0-9-]+$/, { message: 'El slug solo puede contener letras minúsculas, números y guiones' })
+  slug?: string;
+
+  @IsString()
+  @IsOptional()
+  adminFullName?: string;
+
+  @IsString()
+  @IsOptional()
+  ownerName?: string;
 
   @IsEmail({}, { message: 'El correo electrónico no es válido' })
-  @IsNotEmpty({ message: 'El correo electrónico es obligatorio' })
-  adminEmail: string;
+  @IsOptional()
+  adminEmail?: string;
+
+  @IsEmail({}, { message: 'El correo electrónico no es válido' })
+  @IsOptional()
+  email?: string;
 
   @IsString()
   @MinLength(6, { message: 'La contraseña debe tener al menos 6 caracteres' })
-  @IsNotEmpty({ message: 'La contraseña es obligatoria' })
-  adminPassword: string;
+  @IsOptional()
+  adminPassword?: string;
+
+  @IsString()
+  @MinLength(6, { message: 'La contraseña debe tener al menos 6 caracteres' })
+  @IsOptional()
+  password?: string;
 
   @IsString()
   @IsOptional()
@@ -31,6 +49,14 @@ export class RegisterStoreDto {
   @IsEnum(TenantPlan)
   @IsOptional()
   plan?: TenantPlan;
+
+  @IsString()
+  @IsOptional()
+  businessCategory?: string;
+
+  @IsString()
+  @IsOptional()
+  businessDescription?: string;
 }
 
 export class UpdateTenantDto {

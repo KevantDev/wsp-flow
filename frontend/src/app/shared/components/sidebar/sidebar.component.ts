@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
@@ -63,22 +63,24 @@ import { AuthService } from '../../../core/services/auth.service';
           </div>
         }
 
-        <!-- Public Store Preview Button -->
-        <div class="mb-4 px-1">
-          <a
-            routerLink="/tienda/wsp-tech"
-            target="_blank"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold hover:bg-emerald-100/70 transition-all shadow-sm"
-          >
-            <span class="flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Mi Tienda Web
-            </span>
-            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
-        </div>
+        <!-- Public Store Preview Button (SOLO para Tiendas/Tenants o cuando Super Admin impersona tienda) -->
+        @if (!authService.isSuperAdmin() || authService.isImpersonating()) {
+          <div class="mb-4 px-1">
+            <a
+              [routerLink]="storeUrl()"
+              target="_blank"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold hover:bg-emerald-100/70 transition-all shadow-sm group"
+            >
+              <span class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Mi Tienda Web
+              </span>
+              <svg class="w-3.5 h-3.5 text-emerald-600 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </div>
+        }
 
         <!-- Navigation Links -->
         <nav class="space-y-1.5" aria-label="Navegación principal">
@@ -309,4 +311,14 @@ export class SidebarComponent {
   @Output() close = new EventEmitter<void>();
 
   authService = inject(AuthService);
+
+  storeUrl = computed(() => {
+    if (this.authService.isImpersonating()) {
+      const impSlug = this.authService.impersonatedStoreSlug();
+      if (impSlug) return `/tienda/${impSlug}`;
+    }
+    const user = this.authService.currentUser();
+    const slug = user?.tenantSlug || 'wsp-tech';
+    return `/tienda/${slug}`;
+  });
 }

@@ -17,6 +17,7 @@ export class AuthService {
   private readonly ORIGINAL_SUPER_TOKEN_KEY = 'wsp_original_super_token';
   private readonly ORIGINAL_SUPER_USER_KEY = 'wsp_original_super_user';
   private readonly IMPERSONATING_STORE_NAME_KEY = 'wsp_impersonating_store_name';
+  private readonly IMPERSONATING_STORE_SLUG_KEY = 'wsp_impersonating_store_slug';
 
   // Signals para estado reactivo del usuario
   currentUser = signal<User | null>(this.getStoredUser());
@@ -27,6 +28,7 @@ export class AuthService {
   // Impersonation State
   isImpersonating = signal<boolean>(!!localStorage.getItem(this.ORIGINAL_SUPER_TOKEN_KEY));
   impersonatedStoreName = signal<string>(localStorage.getItem(this.IMPERSONATING_STORE_NAME_KEY) || '');
+  impersonatedStoreSlug = signal<string>(localStorage.getItem(this.IMPERSONATING_STORE_SLUG_KEY) || '');
 
   constructor(
     private http: HttpClient,
@@ -64,7 +66,7 @@ export class AuthService {
     );
   }
 
-  applyImpersonation(token: string, storeName: string) {
+  applyImpersonation(token: string, storeName: string, storeSlug?: string) {
     // Si no estamos ya impersonando, guardar el token y usuario original del Super Admin
     if (!this.isImpersonating()) {
       const currentToken = this.getToken();
@@ -75,6 +77,10 @@ export class AuthService {
 
     localStorage.setItem(this.TOKEN_KEY, token);
     localStorage.setItem(this.IMPERSONATING_STORE_NAME_KEY, storeName);
+    if (storeSlug) {
+      localStorage.setItem(this.IMPERSONATING_STORE_SLUG_KEY, storeSlug);
+      this.impersonatedStoreSlug.set(storeSlug);
+    }
     this.isImpersonating.set(true);
     this.impersonatedStoreName.set(storeName);
 
@@ -87,6 +93,8 @@ export class AuthService {
         fullName: payload.fullName || `Admin (${storeName})`,
         role: Role.ADMIN,
         tenantId: payload.tenantId,
+        tenantSlug: storeSlug || payload.tenantSlug,
+        tenantName: storeName,
         isActive: true,
       };
       localStorage.setItem(this.USER_KEY, JSON.stringify(impersonatedUser));
@@ -132,8 +140,10 @@ export class AuthService {
     localStorage.removeItem(this.ORIGINAL_SUPER_TOKEN_KEY);
     localStorage.removeItem(this.ORIGINAL_SUPER_USER_KEY);
     localStorage.removeItem(this.IMPERSONATING_STORE_NAME_KEY);
+    localStorage.removeItem(this.IMPERSONATING_STORE_SLUG_KEY);
     this.isImpersonating.set(false);
     this.impersonatedStoreName.set('');
+    this.impersonatedStoreSlug.set('');
   }
 
   private getStoredUser(): User | null {

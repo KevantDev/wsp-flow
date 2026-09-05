@@ -47,26 +47,45 @@ export class TenantsService {
    * Registra un nuevo emprendedor / tienda en el SaaS (Onboarding)
    */
   async registerStore(dto: RegisterStoreDto) {
-    const slug = dto.storeSlug.toLowerCase().trim();
+    const rawSlug = dto.storeSlug || dto.slug || dto.storeName.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+    const slug = rawSlug.toLowerCase().trim();
+    if (!slug) {
+      throw new BadRequestException('El enlace o slug web de la tienda es obligatorio');
+    }
+
+    const adminEmail = (dto.adminEmail || dto.email || '').toLowerCase().trim();
+    if (!adminEmail) {
+      throw new BadRequestException('El correo electrónico del administrador es obligatorio');
+    }
+
+    const adminFullName = (dto.adminFullName || dto.ownerName || '').trim();
+    if (!adminFullName) {
+      throw new BadRequestException('El nombre del administrador es obligatorio');
+    }
+
+    const adminPassword = dto.adminPassword || dto.password;
+    if (!adminPassword || adminPassword.length < 6) {
+      throw new BadRequestException('La contraseña debe tener al menos 6 caracteres');
+    }
 
     // 1. Validar que el slug no exista
     const existingTenant = await this.tenantRepo.findBySlug(slug);
     if (existingTenant) {
       throw new ConflictException(
-        `El identificador web "${slug}" ya está en uso. Por favor elige otro.`,
+        `El enlace web "${slug}" ya está en uso. Por favor elige otro.`,
       );
     }
 
     // 2. Validar que el email no esté registrado
-    const existingUser = await this.userRepo.findByEmail(dto.adminEmail.toLowerCase().trim());
+    const existingUser = await this.userRepo.findByEmail(adminEmail);
     if (existingUser) {
       throw new ConflictException(
-        `El correo electrónico "${dto.adminEmail}" ya está registrado en la plataforma.`,
+        `El correo electrónico "${adminEmail}" ya está registrado en la plataforma.`,
       );
     }
 
-    // 3. Crear el Tenant (Tienda)
-    const initialPlan = (dto.plan as TenantPlan) || TenantPlan.PRO;
+    // 3. Crear el Tenant (Tienda) — Predeterminado estrictamente en FREE_TRIAL
+    const initialPlan = (dto.plan as TenantPlan) || TenantPlan.FREE_TRIAL;
     const tenant = await this.tenantRepo.create({
       name: dto.storeName.trim(),
       slug,
@@ -75,12 +94,12 @@ export class TenantsService {
     });
 
     // 4. Crear el Usuario Administrador de la Tienda
-    const passwordHash = await bcrypt.hash(dto.adminPassword, 10);
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
     const user = await this.userRepo.create({
       tenantId: tenant.id,
-      email: dto.adminEmail.toLowerCase().trim(),
+      email: adminEmail,
       passwordHash,
-      fullName: dto.adminFullName.trim(),
+      fullName: adminFullName,
       phoneNumber: dto.phoneNumber,
       role: Role.ADMIN,
       isActive: true,
@@ -88,6 +107,14 @@ export class TenantsService {
 
     // 5. Crear la Configuración Inicial de la Empresa / IA
     await this.configRepo.getConfig(tenant.id);
+    if (dto.businessCategory || dto.businessDescription) {
+      const category = dto.businessCategory || 'comercio electrónico';
+      await this.configRepo.updateConfig(tenant.id, {
+        companyName: dto.storeName.trim(),
+        businessDescription: dto.businessDescription || `Comercio especializado en ${category} con catálogo web y atención automatizada por WhatsApp.`,
+        systemPrompt: `Eres Luna, la asesora comercial y asistente virtual de ventas experta de ${dto.storeName.trim()}. La tienda opera en el rubro de ${category}. Tu objetivo es asesorar a los clientes con calidez y precisión, responder dudas sobre productos, verificar stock real, enviar fotos cuando lo soliciten y concretar pedidos de compra de forma fluida.`,
+      });
+    }
 
     // 6. Crear la Sesión Inicial de WhatsApp lista para escanear QR
     await this.sessionRepo.getSession(tenant.id, 'default');
@@ -119,6 +146,9 @@ export class TenantsService {
         email: user.email,
         fullName: user.fullName,
         role: user.role,
+        tenantId: tenant.id,
+        tenantSlug: tenant.slug,
+        tenantName: tenant.name,
       },
     };
   }
@@ -237,12 +267,13 @@ export class TenantsService {
 
     const totalTenants = allTenants.length;
     const activeTenants = allTenants.filter((t) => t.status === 'ACTIVE').length;
+    const basicTenants = allTenants.filter((t) => t.plan === 'BASIC' && t.status === 'ACTIVE').length;
     const proTenants = allTenants.filter((t) => t.plan === 'PRO' && t.status === 'ACTIVE').length;
     const enterpriseTenants = allTenants.filter((t) => t.plan === 'ENTERPRISE' && t.status === 'ACTIVE').length;
     const trialTenants = allTenants.filter((t) => t.plan === 'FREE_TRIAL' && t.status === 'ACTIVE').length;
 
-    // MRR en Soles (PEN) estimado: PRO = S/ 79, Enterprise = S/ 149
-    const estimatedMrr = proTenants * 79 + enterpriseTenants * 149;
+    // MRR en Soles (PEN) según PROJECT_SPECIFICATION.md: BASIC = S/ 49, PRO = S/ 99, ENTERPRISE = S/ 249
+    const estimatedMrr = basicTenants * 49 + proTenants * 99 + enterpriseTenants * 249;
     const estimatedArr = estimatedMrr * 12;
     const totalGmv = Number(totalRevenueResult._sum.total || 0);
 
@@ -253,6 +284,7 @@ export class TenantsService {
       suspendedTenants: totalTenants - activeTenants,
       planDistribution: {
         freeTrial: trialTenants,
+        basic: basicTenants,
         pro: proTenants,
         enterprise: enterpriseTenants,
       },
